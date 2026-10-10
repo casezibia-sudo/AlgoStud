@@ -1,3 +1,4 @@
+import '@/index.css';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { CheckCircle2, ShieldCheck } from 'lucide-react';

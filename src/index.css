@@ -2,7 +2,7 @@
 
 @font-face {
   font-family: 'Satoshi';
-  src: url('/fonts/Satoshi-Variable.woff2') format('woff2');
+  src: url('/assets/Satoshi-Variable.woff2') format('woff2');
   font-weight: 300 900;
   font-display: swap;
 }
@@ -43,11 +43,15 @@
   --ease-out-quint: cubic-bezier(.23,1,.32,1);
 }
 
-html, body { margin: 0; background: var(--color-canvas); color: var(--color-ink); }
-body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
-a { color: var(--color-brand-ink); text-decoration: none; }
-a:hover { color: #064F37; }
-* { -webkit-tap-highlight-color: transparent; }
+/* Must stay inside @layer base: unlayered rules beat Tailwind utilities and
+   turned button-links (text-white, text-ink) green. */
+@layer base {
+  html, body { margin: 0; background: var(--color-canvas); color: var(--color-ink); }
+  body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+  a { color: var(--color-brand-ink); text-decoration: none; }
+  a:hover { color: #064F37; }
+  * { -webkit-tap-highlight-color: transparent; }
+}
 
 @keyframes sheet-in { from { transform: translateY(16px); opacity: 0 } to { transform: none; opacity: 1 } }
 @keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }

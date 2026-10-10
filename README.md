@@ -1,55 +1,42 @@
-# AlgoStudio — Vite app
+# AlgoStudio (Vite)
 
-React 19 + TypeScript + Tailwind v4 + React Router 7. Built from the AlgoStudio design files. All data lives in localStorage behind an API layer you can swap out.
+React 19 + TypeScript + React Router 7, built from the AlgoStudio design files.
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm run build
+npm run build      # outputs dist/
+npm run typecheck  # optional; not part of the build
 ```
-
-Log in with any email. The 6-digit code appears on screen in demo mode. `ananya@gmail.com` is preloaded with 14 seeded deals, one for every stage.
 
 ## Routes
 
-| Path | Screen |
-|---|---|
-| `/` | Marketing website |
-| `/login` | Email code login + profile setup |
-| `/app` | Home (period switch, totals, "Do this first", Needs you) |
-| `/app/deals` | Deals: pipeline cards, Open / Done, grouped Needs you / Waiting on brand |
-| `/app/brands` | Brands (tab inside Deals) |
-| `/app/deals/new`, `/app/deals/:id/edit` | Create deal / edit draft / new version |
-| `/app/deals/:id` | Deal detail |
-| `/app/deals/:id/record` | Deal record (append-only log) |
-| `/app/payments` | Payments + editable reminder (WhatsApp / Copy) |
-| `/app/deliverables` | Deliverables |
-| `/app/reports` | Reports (CSV, PDF via print) |
-| `/app/templates` | Templates (profile menu → Manage templates) |
-| `/app/settings` | Settings (profile menu) |
-| `/d/:token` | Brand terms link: confirm / request changes / decline |
-| `/a/:token` | Brand approval link: approve / request revision |
+- `/`: marketing website, with the login modal
+- `/app`: desktop app (Home, Deals and Brands, Payments, Deliverables, Reports, plus the create deal, deal detail and record screens)
+- `/m`: mobile web app. On phones it fills the screen; on desktop it shows inside a phone frame
+- `/brand`: the brand's view (confirm terms, request changes or decline, approve work)
+- `/d/:token`, `/a/:token`: working brand links on the localStorage API (Tailwind styled)
 
-The app is responsive. Below 1024px it becomes the mobile web app, with a bottom tab bar and a floating create button. Sheets become bottom sheets.
+## How the screens were made
 
-To try the brand side, open a deal, go to **Brand links** and click **Brand's view**.
+`src/screens/*.tsx` are converted 1:1 from the `.dc.html` design files by `scripts/dc-convert.js`. The conversion keeps:
+- the same markup and inline styles
+- the same `{{ }}` bindings, rewritten as JSX
+- the same logic class, copied unchanged
 
-## Design rules carried over
-- Max 5 nav items. Brands is a tab inside Deals. Templates and Settings live in the profile menu.
-- One green primary button per screen. Everything else is white with a grey outline. Black is used only for the active nav and selected chips.
-- Text contrast is at least 4.5:1. Chart values are printed on the chart, never shown only on hover.
-- Logo: Jost 600.
+so each screen renders like the prototype. The small runtime in `src/dc/runtime.tsx` covers the rest:
+- head injection for fonts, keyframes and page resets, added on mount and removed on unmount
+- hover, active and focus states as static CSS classes
+- the `x-import` registry, used for the phone frame
 
-## Swapping in the backend
-`src/api/index.ts` exports `api = localApi`. Replace it with a client that has the same shape (`auth`, `creator`, `deals`, `work`, `payments`, `templates`, `brand`) and calls your server. `useStore()` uses `useSyncExternalStore`. Have your client keep a snapshot and call its subscribers after each mutation, or after a realtime event.
+These screens bring their own CSS, so no global stylesheet loads on them. Tailwind (`src/index.css`) loads only with the `/d` and `/a` brand-link pages and the 404 page.
 
-Rules the server must own (the mock already follows them):
-- Link tokens are 128-bit and opaque. `sendLink` can be retried safely if you pass the same `token`.
-- One answer per link. A repeat call returns the first answer.
-- Brand code: 6 digits, valid 10 min, 3 tries. A verified device is remembered for 30 days for each deal.
-- Terms links expire after 7 days (`deals.sweep` / `brand.get`). This should become a cron job.
-- Every mutation writes an event in the same step. Events are never edited.
-- Changing sent terms always creates a new version. Confirmed terms stay locked.
-- Remove the `demoCode` return values from `requestCode` once real email is wired up.
+To refresh a screen after the design changes, run the converter again on the updated `.dc.html` files. It runs in a browser, because it needs `DOMParser`.
 
-Not in V1: payment processing, file uploads, server PDF generation (print is used for now).
+## Deploying (Vercel)
+
+`vercel.json` sets the Vite framework, the `dist` output folder and the SPA rewrites. If this folder sits inside a larger repo, set **Root Directory** to this folder in Vercel.
+
+## Data
+
+The prototype screens keep the demo data they had in the designs. `src/api` is the localStorage API used by the brand links. It is the layer to swap for the backend; see the comments in `src/api/index.ts`.

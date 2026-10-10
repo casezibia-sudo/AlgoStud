@@ -1,57 +1,29 @@
-import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useStore } from './api';
-import { AppShell } from './layouts/AppShell';
-import Website from './pages/website/Website';
-import Login from './pages/Login';
-import Home from './pages/app/Home';
-import Deals from './pages/app/Deals';
-import DealDetail from './pages/app/DealDetail';
-import DealRecord from './pages/app/DealRecord';
-import CreateDeal from './pages/app/CreateDeal';
-import Payments from './pages/app/Payments';
-import Deliverables from './pages/app/Deliverables';
-import Reports from './pages/app/Reports';
-import Brands from './pages/app/Brands';
-import Templates from './pages/app/Templates';
-import Settings from './pages/app/Settings';
-import TermsLink from './pages/brand/TermsLink';
-import ApprovalLink from './pages/brand/ApprovalLink';
-import NotFound from './pages/NotFound';
+import { lazy, Suspense, type ComponentType } from 'react';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { registerExternal } from './dc/runtime';
+import { DeviceOrFullscreen } from './dc/AndroidChromeDevice';
 
-// Guards in spec order: deletion pending → signed out → not found (handled per page).
-function RequireAuth() {
-  const { session, account } = useStore();
-  const loc = useLocation();
-  if (!session || !account) return <Navigate to={'/login?next=' + encodeURIComponent(loc.pathname)} replace />;
-  if (account.creator.deletion && loc.pathname !== '/app/settings') return <Navigate to="/app/settings" replace />;
-  return <Outlet />;
-}
+registerExternal('AndroidChromeDevice', DeviceOrFullscreen);
+registerExternal('AndroidDevice', DeviceOrFullscreen);
+
+// Prototype screens, converted 1:1 from the design files (src/screens). Each loads on demand.
+const screen = (load: () => Promise<{ default: ComponentType<any> }>, props: Record<string, unknown> = {}) => {
+  const C = lazy(load);
+  return <div id="dc-root"><Suspense fallback={null}><C {...props} /></Suspense></div>;
+};
+const page = (load: () => Promise<{ default: ComponentType<any> }>) => {
+  const C = lazy(load);
+  return <Suspense fallback={null}><C /></Suspense>;
+};
 
 export const router = createBrowserRouter([
-  { path: '/', element: <Website /> },
-  { path: '/login', element: <Login /> },
-  { path: '/d/:token', element: <TermsLink /> },
-  { path: '/a/:token', element: <ApprovalLink /> },
-  {
-    element: <RequireAuth />,
-    children: [{
-      path: '/app',
-      element: <AppShell />,
-      children: [
-        { index: true, element: <Home /> },
-        { path: 'deals', element: <Deals /> },
-        { path: 'deals/new', element: <CreateDeal /> },
-        { path: 'deals/:id', element: <DealDetail /> },
-        { path: 'deals/:id/edit', element: <CreateDeal /> },
-        { path: 'deals/:id/record', element: <DealRecord /> },
-        { path: 'brands', element: <Brands /> },
-        { path: 'payments', element: <Payments /> },
-        { path: 'deliverables', element: <Deliverables /> },
-        { path: 'reports', element: <Reports /> },
-        { path: 'templates', element: <Templates /> },
-        { path: 'settings', element: <Settings /> },
-      ],
-    }],
-  },
-  { path: '*', element: <NotFound /> },
+  { path: '/', element: screen(() => import('./screens/Website')) },
+  { path: '/app', element: screen(() => import('./screens/DesktopApp')) },
+  { path: '/m', element: screen(() => import('./screens/MobileWebApp'), { bare: true }) },
+  { path: '/brand', element: screen(() => import('./screens/BrandView')) },
+  { path: '/login', element: <Navigate to="/" replace /> },
+  // Working brand links on the localStorage API (Tailwind styled)
+  { path: '/d/:token', element: page(() => import('./pages/brand/TermsLink')) },
+  { path: '/a/:token', element: page(() => import('./pages/brand/ApprovalLink')) },
+  { path: '*', element: page(() => import('./pages/NotFound')) },
 ]);

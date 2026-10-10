@@ -144,7 +144,7 @@ export function Avatar({ name, size = 36, dark }: { name: string; size?: number;
 export function Logo({ size = 26, white }: { size?: number; white?: boolean }) {
   return (
     <span className="inline-flex items-center gap-2">
-      <img src={white ? '/logo-mark-white.png' : '/logo-mark.png'} alt="" style={{ width: size * 0.92 }} />
+      <img src={white ? '/assets/logo-mark-white.png' : '/assets/logo-mark.png'} alt="" style={{ width: size * 0.92 }} />
       <span className={cx('font-display font-semibold leading-none tracking-[-0.02em] whitespace-nowrap', white ? 'text-white' : 'text-[#111111]')} style={{ fontSize: size }}>AlgoStudio</span>
     </span>
   );
