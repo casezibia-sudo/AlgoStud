@@ -126,6 +126,16 @@ export interface Creator {
   deletion: { requestedAt: string; scheduledFor: string } | null; createdAt: string; prefs?: Prefs;
 }
 
+/** Rows in Supabase `profiles` and `settings` (supabase/migrations/0001). */
+export interface Profile {
+  id: string; name: string; handle: string; payment_link: string | null;
+  deletion_requested_at: string | null; deletion_scheduled_for: string | null;
+}
+export interface CreatorSettings {
+  creator_id: string; default_trigger: Trigger;
+  notify_answers: boolean; notify_expiring: boolean; notify_due_soon: boolean;
+}
+
 export interface Account {
   creator: Creator;
   deals: Deal[];

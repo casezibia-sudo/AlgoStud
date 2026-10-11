@@ -12,10 +12,16 @@ npm run typecheck  # optional; not part of the build
 ## Routes
 
 - `/`: marketing website, with the login modal
-- `/app`: desktop app (Home, Deals and Brands, Payments, Deliverables, Reports, plus the create deal, deal detail and record screens)
+- `/login`: creator login (6-digit email code, Supabase Auth)
+- `/app/*`: the real creator app (`src/pages/app`). Needs a login: `RequireCreator` checks account-being-deleted, then signed-out (redirects to `/login`), then deal ownership on `/app/deals/:id`
+- `/preview`: the design prototype of the desktop app, to compare with `/app`. Also `/preview/m`, `/preview/brand`, `/preview/login`. Open these with a full page load, because the real app loads Tailwind
 - `/m`: mobile web app. On phones it fills the screen; on desktop it shows inside a phone frame
 - `/brand`: the brand's view (confirm terms, request changes or decline, approve work)
 - `/d/:token`, `/a/:token`: working brand links on the localStorage API (Tailwind styled)
+
+## Database
+
+`supabase/migrations/*.sql`: run each file once, in order, in the Supabase SQL Editor.
 
 ## How the screens were made
 

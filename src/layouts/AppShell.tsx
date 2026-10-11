@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Users, Copy, Settings, LogOut, Home, Handshake, Wallet, PackageCheck, BarChart3 } from 'lucide-react';
 import { api, useAccount } from '@/api';
 import { Avatar, Logo } from '@/components/ui';
+import { useAuth } from '@/lib/auth';
 import { cx } from '@/lib/format';
 
 // Max 5 top-level items. Brands lives as a tab inside Deals; Templates and Settings live in the profile menu.
@@ -16,6 +17,7 @@ export const NAV = [
 
 function ProfileMenu() {
   const a = useAccount();
+  const { signOut } = useAuth();
   const nav = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -52,7 +54,7 @@ function ProfileMenu() {
             </button>
           ))}
           <div className="my-1 h-px bg-line" />
-          <button role="menuitem" type="button" onClick={async () => { await api.auth.signOut(); nav('/login'); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-danger hover:bg-danger-tint cursor-pointer">
+          <button role="menuitem" type="button" onClick={async () => { await signOut(); nav('/login', { replace: true }); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-danger hover:bg-danger-tint cursor-pointer">
             <LogOut size={16} />Log out
           </button>
         </div>

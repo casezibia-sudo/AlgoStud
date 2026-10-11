@@ -7,4 +7,7 @@ if (!url || !key) {
   throw new Error('Missing Supabase environment variables')
 }
 
-export const supabase = createClient(url, key)
+// Sessions live in localStorage and refresh themselves, so creators stay signed in.
+export const supabase = createClient(url, key, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+})
