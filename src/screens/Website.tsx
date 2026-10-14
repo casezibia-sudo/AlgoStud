@@ -129,11 +129,13 @@ class Component extends DCLogic {
     let W = 0, H = 0, dpr = 1, cols = 0, rows = 0;
     const pal = ['#BDEFDC', '#8FE0C6', '#5FCFAE', '#34C39A', '#14A39A', '#0A7F55', '#076645', '#064F37'];
     const build = () => {
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       W = cv.clientWidth; H = cv.clientHeight;
       cv.width = W * dpr; cv.height = H * dpr;
-      cols = Math.round(W / (W < 640 ? 16 : 13)); rows = W < 640 ? 18 : 26;
+      cols = Math.round(W / 16); rows = W < 640 ? 16 : 22;
+      pts = Array.from({ length: cols }, () => ({ x: 0, y: 0, z: 0, k: 0, env: 0 })); // reused every frame, no per-frame allocation
     };
+    let pts = [];
     build();
     const ptr = { x: -9999, y: -9999, tx: -9999, ty: -9999, on: 0, ton: 0 };
     const host = cv.parentElement;
@@ -146,11 +148,10 @@ class Component extends DCLogic {
     const ro = new ResizeObserver(() => { build(); if (still) draw(0); });
     ro.observe(cv);
     const draw = t => {
-      ptr.x += (ptr.tx - ptr.x) * 0.1; ptr.y += (ptr.ty - ptr.y) * 0.1; ptr.on += (ptr.ton - ptr.on) * 0.05;
+      ptr.x += (ptr.tx - ptr.x) * 0.3; ptr.y += (ptr.ty - ptr.y) * 0.3; ptr.on += (ptr.ton - ptr.on) * 0.12;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
       const cx = W / 2, sig2 = 2 * 120 * 120, T = still ? 0 : t;
-      const pts = new Array(cols);
       for (let j = 0; j < rows; j++) {
         const p = j / (rows - 1), depth = 0.35 + 0.65 * p;
         const baseY = H * 0.06 + Math.pow(p, 1.35) * H * 0.86;
@@ -163,7 +164,7 @@ class Component extends DCLogic {
           const dx = ptr.x - x, dy = ptr.y - baseY;
           const k = ptr.on * Math.exp(-(dx * dx + dy * dy) / sig2);
           z += 46 * k;
-          pts[i] = { x: x - dx * 0.08 * k, y: baseY - z * depth, z, k, env };
+          const o = pts[i]; o.x = x - dx * 0.08 * k; o.y = baseY - z * depth; o.z = z; o.k = k; o.env = env;
         }
         ctx.globalAlpha = 0.08 + 0.12 * p;
         ctx.strokeStyle = '#0A7F55'; ctx.lineWidth = 1;
@@ -341,9 +342,10 @@ class Component extends DCLogic {
     this._curOn = true;
     const still = this.state.still, mk = (css) => { const d = document.createElement('div'); d.setAttribute('aria-hidden', 'true'); d.style.cssText = css; document.body.appendChild(d); return d; };
     const st = document.createElement('style');
-    st.textContent = 'html.as-cur, html.as-cur * { cursor: none !important } html.as-cur input, html.as-cur textarea, html.as-cur [contenteditable="true"] { cursor: text !important }';
+    // Keep the native cursor visible so pointer response never depends on page frame rate; ring and glow are decoration only.
+    st.textContent = '';
     document.head.appendChild(st);
-    const glow = mk('position:fixed;left:0;top:0;width:560px;height:560px;margin:-280px 0 0 -280px;border-radius:50%;pointer-events:none;z-index:9997;background:radial-gradient(closest-side,rgba(52,195,154,.22),rgba(52,195,154,.08) 45%,rgba(52,195,154,0));mix-blend-mode:multiply;opacity:0;transition:opacity 400ms ease;will-change:transform');
+    const glow = mk('position:fixed;left:0;top:0;width:560px;height:560px;margin:-280px 0 0 -280px;border-radius:50%;pointer-events:none;z-index:9997;background:radial-gradient(closest-side,rgba(52,195,154,.22),rgba(52,195,154,.08) 45%,rgba(52,195,154,0));contain:strict;opacity:0;transition:opacity 400ms ease;will-change:transform');
     const ring = mk('position:fixed;left:0;top:0;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;pointer-events:none;z-index:9999;border:1.5px solid rgba(10,127,85,.7);background:rgba(10,127,85,0);opacity:0;transition:width 260ms cubic-bezier(.23,1,.32,1),height 260ms cubic-bezier(.23,1,.32,1),margin 260ms cubic-bezier(.23,1,.32,1),background 200ms ease,border-color 200ms ease,opacity 200ms ease;will-change:transform');
     const dot = mk('position:fixed;left:0;top:0;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;pointer-events:none;z-index:10000;background:#0A7F55;box-shadow:0 0 0 1.5px rgba(255,255,255,.85);opacity:0;transition:opacity 200ms ease,width 200ms ease,height 200ms ease,margin 200ms ease;will-change:transform');
     let mx = -100, my = -100, rx = -100, ry = -100, gx = -100, gy = -100, raf = 0, down = false, hov = false, txt = false, shown = false;
@@ -355,12 +357,11 @@ class Component extends DCLogic {
       ring.dataset.sc = sc;
       const ds = hov || txt ? 0 : 6; dot.style.width = dot.style.height = ds + 'px'; dot.style.margin = (-ds / 2) + 'px 0 0 ' + (-ds / 2) + 'px';
     };
-    const show = v => { shown = v; ring.style.opacity = dot.style.opacity = v && !txt ? 1 : 0; glow.style.opacity = v ? 1 : 0; };
+    const show = v => { shown = v; ring.style.opacity = v && !txt ? 1 : 0; dot.style.opacity = 0; glow.style.opacity = v ? 1 : 0; };
     const loop = () => {
       raf = 0;
-      const k = still ? 1 : .2, kg = still ? 1 : .08;
+      const k = still ? 1 : .38, kg = still ? 1 : .16;
       rx += (mx - rx) * k; ry += (my - ry) * k; gx += (mx - gx) * kg; gy += (my - gy) * kg;
-      dot.style.transform = `translate3d(${mx}px,${my}px,0)`;
       ring.style.transform = `translate3d(${rx}px,${ry}px,0) scale(${ring.dataset.sc || 1})`;
       glow.style.transform = `translate3d(${gx}px,${gy}px,0)`;
       if (Math.abs(mx - rx) + Math.abs(my - ry) + Math.abs(mx - gx) + Math.abs(my - gy) > .3) raf = requestAnimationFrame(loop);
@@ -368,6 +369,7 @@ class Component extends DCLogic {
     const kick = () => { if (!raf) raf = requestAnimationFrame(loop); };
     const move = e => {
       mx = e.clientX; my = e.clientY;
+      dot.style.transform = `translate3d(${mx}px,${my}px,0)`; // the dot tracks the pointer with no frame delay
       if (!shown) { rx = gx = mx; ry = gy = my; document.documentElement.classList.add('as-cur'); show(true); }
       kick();
     };
