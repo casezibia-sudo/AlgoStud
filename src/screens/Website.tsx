@@ -187,6 +187,8 @@ class Component extends DCLogic {
   }
   h1Ref = React.createRef();
   openLogin() {
+    // Real email/Google login lives at /login now; the prototype phone popup below is no longer reachable.
+    if (location.pathname !== '/login') { history.replaceState(null, '', location.pathname + location.search); location.assign('/login'); return; }
     clearTimeout(this._lgT);
     this._lgPrevOverflow = document.documentElement.style.overflow;
     document.documentElement.style.overflow = 'hidden';

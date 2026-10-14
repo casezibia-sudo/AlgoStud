@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ComponentType } from 'react';
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter } from 'react-router-dom';
+import { AuthProvider } from './lib/auth';
 import { registerExternal } from './dc/runtime';
 import { DeviceOrFullscreen } from './dc/AndroidChromeDevice';
 
@@ -21,7 +22,7 @@ export const router = createBrowserRouter([
   { path: '/app', element: screen(() => import('./screens/DesktopApp')) },
   { path: '/m', element: screen(() => import('./screens/MobileWebApp'), { bare: true }) },
   { path: '/brand', element: screen(() => import('./screens/BrandView')) },
-  { path: '/login', element: <Navigate to="/" replace /> },
+  { path: '/login', element: <AuthProvider>{page(() => import('./pages/Login'))}</AuthProvider> },
   // Working brand links on the localStorage API (Tailwind styled)
   { path: '/d/:token', element: page(() => import('./pages/brand/TermsLink')) },
   { path: '/a/:token', element: page(() => import('./pages/brand/ApprovalLink')) },

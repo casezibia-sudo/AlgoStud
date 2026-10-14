@@ -1,5 +1,5 @@
 import '@/index.css';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { settingsApi } from '@/api/settings';
 import { Button, Field, Input, Logo } from '@/components/ui';
@@ -28,8 +28,18 @@ export default function Login() {
   const [name, setName] = useState('');
   const [handle, setHandle] = useState('');
 
-  // Already signed in: skip the form. (Not during the code or profile steps, which finish the sign-in themselves.)
-  if (step === 'email' && status !== 'loading' && session) return <Navigate to={next} replace />;
+  const oauth = params.get('oauth') === '1';
+
+  // Back from Google: send brand-new accounts to profile setup, everyone else to where they were headed.
+  useEffect(() => {
+    if (!oauth || !session) return;
+    settingsApi.load(session.user.id)
+      .then(({ profile }) => { if (profile.name) nav(next, { replace: true }); else setStep('profile'); })
+      .catch(() => setErr('Signed in, but your profile did not load. Refresh the page.'));
+  }, [oauth, session?.user.id]);
+
+  // Already signed in: skip the form. (Not during the code, profile or Google-return steps, which finish the sign-in themselves.)
+  if (step === 'email' && !oauth && status !== 'loading' && session) return <Navigate to={next} replace />;
 
   const send = async () => {
     const addr = email.trim();
@@ -39,6 +49,13 @@ export default function Login() {
     setBusy(false);
     if (error) return setErr(error.status === 429 ? 'Too many tries. Wait a minute, then ask for a new code.' : 'Could not send the code. Try again.');
     setEmail(addr); setStep('code');
+  };
+
+  const google = async () => {
+    setBusy(true); setErr('');
+    const redirectTo = `${location.origin}/login?oauth=1&next=${encodeURIComponent(next)}`;
+    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+    if (error) { setBusy(false); setErr('Could not start Google sign-in. Try again.'); }
   };
 
   const verify = async () => {
@@ -75,6 +92,8 @@ export default function Login() {
             <div><h1 className="m-0 text-xl font-bold">Log in or sign up</h1><p className="m-0 mt-1 text-sm font-medium text-muted">We'll email you a 6-digit code. No password.</p></div>
             <Field label="Email" error={err}>{id => <Input id={id} type="email" autoComplete="email" autoFocus value={email} onChange={e => { setEmail(e.target.value); setErr(''); }} onKeyDown={e => e.key === 'Enter' && !busy && send()} />}</Field>
             <Button variant="primary" size="lg" disabled={busy} onClick={send}>Send code</Button>
+            <div className="flex items-center gap-3 text-xs font-semibold text-muted"><span className="h-px flex-1 bg-black/10" />or<span className="h-px flex-1 bg-black/10" /></div>
+            <Button variant="secondary" size="lg" disabled={busy} onClick={google}>Continue with Google</Button>
           </>}
           {step === 'code' && <>
             <div><h1 className="m-0 text-xl font-bold">Check your email</h1><p className="m-0 mt-1 text-sm font-medium text-muted">Code sent to {email}. It works for 10 minutes.</p></div>
