@@ -138,10 +138,7 @@ class Component extends DCLogic {
     let pts = [];
     build();
     const ptr = { x: -9999, y: -9999, tx: -9999, ty: -9999, on: 0, ton: 0 };
-    const host = cv.parentElement;
-    const move = e => { const r = cv.getBoundingClientRect(); ptr.tx = e.clientX - r.left; ptr.ty = e.clientY - r.top; ptr.ton = 1; if (ptr.x < -999) { ptr.x = ptr.tx; ptr.y = ptr.ty; } };
-    const leave = () => { ptr.ton = 0; };
-    host.addEventListener('pointermove', move); host.addEventListener('pointerleave', leave);
+    // No pointer interaction in the hero: the mesh just drifts. (ptr stays off-canvas with on = 0.)
     let visible = true, raf = 0;
     const io = new IntersectionObserver(es => { visible = es[0].isIntersecting; if (visible && !raf && !still) raf = requestAnimationFrame(frame); });
     io.observe(cv);
@@ -184,7 +181,7 @@ class Component extends DCLogic {
     };
     const frame = t => { raf = 0; if (!visible) return; draw(t); raf = requestAnimationFrame(frame); };
     if (still) draw(0); else raf = requestAnimationFrame(frame);
-    this._burstStop = () => { cancelAnimationFrame(raf); io.disconnect(); ro.disconnect(); host.removeEventListener('pointermove', move); host.removeEventListener('pointerleave', leave); };
+    this._burstStop = () => { cancelAnimationFrame(raf); io.disconnect(); ro.disconnect(); };
   }
   h1Ref = React.createRef();
   openLogin() {
@@ -357,7 +354,8 @@ class Component extends DCLogic {
       ring.dataset.sc = sc;
       const ds = hov || txt ? 0 : 6; dot.style.width = dot.style.height = ds + 'px'; dot.style.margin = (-ds / 2) + 'px 0 0 ' + (-ds / 2) + 'px';
     };
-    const show = v => { shown = v; ring.style.opacity = v && !txt ? 1 : 0; dot.style.opacity = 0; glow.style.opacity = v ? 1 : 0; };
+    let hero = false; // the hero has no cursor effects
+    const show = v => { shown = v; ring.style.opacity = v && !txt && !hero ? 1 : 0; dot.style.opacity = 0; glow.style.opacity = v && !hero ? 1 : 0; };
     const loop = () => {
       raf = 0;
       const k = still ? 1 : .38, kg = still ? 1 : .16;
@@ -371,12 +369,14 @@ class Component extends DCLogic {
       mx = e.clientX; my = e.clientY;
       dot.style.transform = `translate3d(${mx}px,${my}px,0)`; // the dot tracks the pointer with no frame delay
       if (!shown) { rx = gx = mx; ry = gy = my; document.documentElement.classList.add('as-cur'); show(true); }
-      kick();
+      if (!hero) kick();
     };
     const over = e => {
       const t = e.target;
       const nTxt = !!(t.closest && t.closest('input:not([type=button]):not([type=submit]):not([type=checkbox]):not([type=radio]),textarea,[contenteditable="true"]'));
       const nHov = !nTxt && !!(t.closest && t.closest('a[href],button,[role="button"],label,select,summary,[tabindex]:not([tabindex="-1"])'));
+      const nHero = !!(t.closest && t.closest('[data-screen-label="Hero"]'));
+      if (nHero !== hero) { hero = nHero; if (!hero) { rx = gx = mx; ry = gy = my; kick(); } show(shown); }
       if (nTxt !== txt || nHov !== hov) { txt = nTxt; hov = nHov; setRing(); show(shown); }
     };
     const leave = e => { if (!e.relatedTarget) show(false); };
