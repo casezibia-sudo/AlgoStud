@@ -1,10 +1,13 @@
 import { useSyncExternalStore } from 'react';
 import { localApi } from './local';
+import { remoteApi, startRemote } from './remote';
+import { remoteEnabled } from './supabase';
 import type { Deal, Stage } from './types';
 import { daysFrom, todayISO } from '@/lib/format';
 
-// Swap this for a fetch-based client with the same shape when the backend exists.
-export const api = localApi;
+// Supabase when VITE_SUPABASE_URL is set, otherwise the localStorage demo.
+if (remoteEnabled) startRemote();
+export const api: typeof remoteApi = remoteEnabled ? remoteApi : localApi;
 export * from './types';
 
 export function useStore() {

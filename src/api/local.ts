@@ -189,12 +189,28 @@ function load(): Store {
   return seedState();
 }
 function acct(): Account | null { return (state?.session && state.accounts[state.session.email]) || null; }
+let persistLocal = true;
+const emitHooks = new Set<(a: Account | null) => void>();
+function notify() { snap = { v: snap.v + 1, account: acct(), session: state.session }; listeners.forEach(l => l()); }
 function emit() {
-  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* quota */ }
-  snap = { v: snap.v + 1, account: acct(), session: state.session };
-  listeners.forEach(l => l());
+  if (persistLocal) try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* quota */ }
+  notify();
+  const a = acct(); emitHooks.forEach(h => h(a));
 }
-addEventListener('storage', e => { if (e.key === KEY) { state = load(); snap = { v: snap.v + 1, account: acct(), session: state.session }; listeners.forEach(l => l()); } });
+
+/** Used by remote.ts: the same mutation logic runs here, then changes are synced to Supabase. */
+export const localInternals = {
+  remoteMode() { persistLocal = false; state = { schema: SCHEMA, session: null, accounts: {} }; notify(); },
+  hydrate(email: string, a: Account | null) { state = { schema: SCHEMA, session: a ? { email, at: iso() } : null, accounts: a ? { [email]: a } : {} }; notify(); },
+  notify,
+  onEmit(fn: (a: Account | null) => void) { emitHooks.add(fn); },
+  seedAccount(email: string, creator: Partial<Creator>): Account {
+    const a = Object.values(seedState().accounts)[0];
+    a.creator = { ...a.creator, ...creator, email };
+    return a;
+  },
+};
+addEventListener('storage', e => { if (persistLocal && e.key === KEY) { state = load(); snap = { v: snap.v + 1, account: acct(), session: state.session }; listeners.forEach(l => l()); } });
 
 const must = () => { const a = acct(); if (!a) throw new Error('Signed out'); return a; };
 const dealOf = (a: Account, id: string) => { const d = a.deals.find(x => x.id === id); if (!d) throw new Error('Not found'); return d; };

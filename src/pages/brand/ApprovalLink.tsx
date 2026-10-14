@@ -14,6 +14,7 @@ export default function ApprovalLink() {
   const [revFor, setRevFor] = useState<string | null>(null);
   const [note, setNote] = useState('');
   useEffect(() => { api.brand.open(token); }, [token]);
+  if (v === undefined) return null;
   if (!v || v.link.kind !== 'a') return <InvalidLink />;
   const { deal: d, creator: c, link: l } = v;
   const fn = firstName(c.name);

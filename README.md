@@ -12,16 +12,10 @@ npm run typecheck  # optional; not part of the build
 ## Routes
 
 - `/`: marketing website, with the login modal
-- `/login`: creator login (6-digit email code, Supabase Auth)
-- `/app/*`: the real creator app (`src/pages/app`). Needs a login: `RequireCreator` checks account-being-deleted, then signed-out (redirects to `/login`), then deal ownership on `/app/deals/:id`
-- `/preview`: the design prototype of the desktop app, to compare with `/app`. Also `/preview/m`, `/preview/brand`, `/preview/login`. Open these with a full page load, because the real app loads Tailwind
+- `/app`: desktop app (Home, Deals and Brands, Payments, Deliverables, Reports, plus the create deal, deal detail and record screens)
 - `/m`: mobile web app. On phones it fills the screen; on desktop it shows inside a phone frame
 - `/brand`: the brand's view (confirm terms, request changes or decline, approve work)
 - `/d/:token`, `/a/:token`: working brand links on the localStorage API (Tailwind styled)
-
-## Database
-
-`supabase/migrations/*.sql`: run each file once, in order, in the Supabase SQL Editor.
 
 ## How the screens were made
 
@@ -45,4 +39,24 @@ To refresh a screen after the design changes, run the converter again on the upd
 
 ## Data
 
-The prototype screens keep the demo data they had in the designs. `src/api` is the localStorage API used by the brand links. It is the layer to swap for the backend; see the comments in `src/api/index.ts`.
+The prototype screens keep the demo data they had in the designs. `src/api` is the data layer: it runs on localStorage by default and on Supabase when `.env.local` has keys. Expenses (`window.ASX`) come from `src/api/expenses.ts` in both modes.
+
+## Backend (Supabase)
+
+```bash
+npm i -g supabase
+supabase login
+supabase init                       # once, keeps the existing supabase/ folder
+supabase link --project-ref <ref>
+supabase db push                    # tables, RLS, views, receipts bucket, hourly sweep
+supabase functions deploy brand --no-verify-jwt
+supabase secrets set RESEND_API_KEY=... MAIL_FROM="AlgoStudio <codes@yourdomain>"
+cp .env.example .env.local          # fill in the project URL and anon key
+```
+
+In the Supabase dashboard: Auth → Email templates → Magic Link, include `{{ .Token }}` so creators get a 6-digit code. Add the same two `VITE_` variables in Vercel.
+
+- `supabase/migrations/…_init.sql`: creators, one table per entity in `src/api/types.ts` (stored as `data jsonb` with generated columns for reporting), `expenses` with soft delete, `categories`, the `money_by_month`, `spent_by_category` and `deal_profit` views, the private `receipts` bucket, and an hourly `sweep()` that expires links, purges deleted expenses after 30 days and removes accounts past their deletion date.
+- `supabase/functions/brand`: the public `/d/:token` and `/a/:token` actions (view, open, email code, verify, answer, approve or request a revision). Brands never get database access; every call is scoped by the link token.
+- `src/api/remote.ts`: creator actions run the same logic as `local.ts`, then only the changed rows are written. Row-level security limits every read and write to the signed-in creator.
+- For testing without email, set `DEMO_CODES=true` as a function secret to return brand codes in the response.

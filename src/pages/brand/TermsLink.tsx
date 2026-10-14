@@ -53,7 +53,7 @@ const AREAS = ['Amount', 'Deliverables', 'Payment', 'Due date', 'Usage rights', 
 export default function TermsLink() {
   const { token = '' } = useParams();
   useStore();
-  const v: BrandLinkView | null = api.brand.get(token);
+  const v: BrandLinkView | null | undefined = api.brand.get(token);
   const [mode, setMode] = useState<'review' | 'verify' | 'sign' | 'changes' | 'decline'>('review');
   const [name, setName] = useState('');
   const [agree, setAgree] = useState(false);
@@ -61,6 +61,7 @@ export default function TermsLink() {
   const [note, setNote] = useState('');
   const [reason, setReason] = useState('');
   useEffect(() => { api.brand.open(token); }, [token]);
+  if (v === undefined) return null;
   if (!v || v.link.kind !== 'd') return <InvalidLink />;
   const { deal: d, creator: c, link: l } = v;
   const who = c.name || 'The creator', fn = firstName(c.name);
