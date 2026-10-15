@@ -7,7 +7,6 @@ import { overviewStats } from './dashboardStats';
 //  - Received: paid deals by paid date (Indian date), at the amount received. In real mode there is no payments table yet,
 //    so this always comes from the deals themselves, never from account.payments.
 //  - History rows: one per invoiced deal (Due / Overdue) and one per paid deal (Received).
-//  - Spent / Profit: only when expenses exist. Profit is never "received minus 0".
 // TODO (slice 6): advance + balance deals should become two history rows (advance and balance). Today a deal is one row.
 
 export type HStatus = 'overdue' | 'due' | 'received';
@@ -40,22 +39,15 @@ export const reminderRows = (rows: HRow[]) => rows.filter(r => r.status !== 'rec
 export interface Tiles {
   owed: { total: number; n: number; overdue: number; overdueN: number };
   received: { total: number; n: number; month: string };
-  /** null until expenses exist */
-  spent: { total: number; n: number } | null;
-  profit: number | null;
 }
 
-export function tiles(a: Account, expenses: { date: string; amount: number }[]): Tiles {
+export function tiles(a: Account): Tiles {
   const o = overviewStats(a).owed, month = todayISO().slice(0, 7);
   const rec = a.deals.filter(d => effStage(d) === 'paid' && paidDate(d).slice(0, 7) === month);
   const received = rec.reduce((s, d) => s + paidAmount(d), 0);
-  const mine = expenses.filter(e => e.date.slice(0, 7) === month);
-  const spentTotal = mine.reduce((s, e) => s + e.amount, 0);
   return {
     owed: { total: o.total, n: o.n, overdue: o.overdue, overdueN: o.overdueN },
     received: { total: received, n: rec.length, month: monthName(month) },
-    spent: expenses.length ? { total: spentTotal, n: mine.length } : null,
-    profit: expenses.length ? received - spentTotal : null,
   };
 }
 

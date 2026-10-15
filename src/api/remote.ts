@@ -4,7 +4,7 @@
 // still reuses the logic in local.ts on an in-memory copy of the account, and the changed rows are
 // diffed and written to the document tables. Brand-side calls go to the `brand` edge function.
 import { localApi, localInternals } from './local';
-import { sb } from './supabase';
+import { sb, remoteEnabled } from './supabase';
 import { applyDealData, headerArgs, loadDealData, rpc, templateTerms, termsArgs } from './dealsRemote';
 import { isUnbuilt, LATER, warnOnce } from './safe';
 import type { Account, Answer, AnswerInput, BrandLinkView, Creator, DbStage, Deal, DealDraft, Submission, Template, WorkAnswerInput } from './types';
@@ -20,7 +20,8 @@ const TABLES: { field: keyof Account; table: string; key: (x: any) => string }[]
 ];
 // Tables for features not built yet are skipped entirely (see safe.ts), so only LIVE ones are read or written.
 const LIVE = TABLES.filter(t => !isUnbuilt(t.table));
-TABLES.filter(t => isUnbuilt(t.table)).forEach(t => warnOnce(t.table));
+// Only say so when Supabase is actually in use; the local demo has no such tables to skip.
+if (remoteEnabled) TABLES.filter(t => isUnbuilt(t.table)).forEach(t => warnOnce(t.table));
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 let session: { email: string; at: string; userId: string } | null = null;

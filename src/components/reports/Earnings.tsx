@@ -14,8 +14,6 @@ export function Earnings({ r }: { r: Reports }) {
   const { top, step } = axis(m.max), ticks = Array.from({ length: top / step + 1 }, (_, k) => k * step);
   const cur = m.cur[i], prev = m.prev[i], diff = cur.amount - prev.amount;
   const empty = m.max === 0;
-  const spent = m.spent[i], profit = m.profit[i];
-  const firstProfit = m.profit.findIndex(p => p !== null);
 
   return (
     <section aria-label="Earnings by month" className={cx(CARD, 'flex flex-col rounded-[24px] p-[19px] lg:px-[25px] lg:pb-[19px] lg:pt-[22px]')}>
@@ -32,7 +30,6 @@ export function Earnings({ r }: { r: Reports }) {
         {prev.amount > 0
           ? <span className={cx('text-[13.5px] font-medium', diff >= 0 ? 'text-brand-ink' : 'text-danger')}>{diff >= 0 ? '+' : '-'}{rupee(Math.abs(diff))} vs {rupee(prev.amount)} last period</span>
           : <span className="text-[13.5px] font-medium text-muted">Nothing received in this month last period</span>}
-        <span className="text-[13.5px] font-medium text-brand-ink">{profit !== null && spent !== null ? `Profit ${profit < 0 ? '-' : ''}${rupee(Math.abs(profit))} after ${rupee(spent)} spent` : ''}</span>
       </div>
 
       {empty ? (
@@ -60,13 +57,9 @@ export function Earnings({ r }: { r: Reports }) {
             <ol className="m-0 mt-2.5 grid list-none p-0 text-center text-[13px] font-medium text-ink-2" style={{ gridTemplateColumns: `repeat(${m.cur.length}, minmax(0, 1fr))` }}>
               {m.cur.map((b, k) => <li key={b.key} className={k === i ? 'font-semibold text-ink' : ''}>{b.label}</li>)}
             </ol>
-            <ol aria-label="Profit per month" className="m-0 mt-3 grid list-none border-t border-[#E4E6E8] p-0 pt-3 text-center text-[13px] font-semibold" style={{ gridTemplateColumns: `repeat(${m.cur.length}, minmax(0, 1fr))` }}>
-              {m.profit.map((p, k) => <li key={k} className={p === null ? 'text-muted' : p < 0 ? 'text-danger' : 'text-brand-ink'}>{p === null ? '—' : (p < 0 ? '-' : '') + kLabel(Math.abs(p))}</li>)}
-            </ol>
           </div>
         </div>
       )}
-      <p className="m-0 mt-3 text-center text-[13px] font-medium text-ink-2">{m.hasExpenses && firstProfit >= 0 ? `Profit per month, earned minus spent. Shown from ${monthFull(m.firstExpenseMonth!)}, when you started logging expenses.` : 'Profit per month appears once expenses are logged.'}</p>
     </section>
   );
 }

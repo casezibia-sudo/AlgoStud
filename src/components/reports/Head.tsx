@@ -1,4 +1,4 @@
-import { CircleCheck, Clock, Download, FileText, Handshake, PiggyBank, Receipt, TrendingDown, TrendingUp, Wallet, type LucideIcon } from 'lucide-react';
+import { CircleCheck, Clock, Download, FileText, Handshake, TrendingDown, TrendingUp, Wallet, type LucideIcon } from 'lucide-react';
 import { LATER } from '@/api/safe';
 import { CARD } from '@/components/overview/shared';
 import { useToast } from '@/components/ui';
@@ -31,19 +31,19 @@ export function Head({ n, onN, r }: { n: Months; onN: (n: Months) => void; r: Re
 }
 
 const TILES: { key: keyof Reports['kpis']; label: string; icon: LucideIcon; green?: boolean }[] = [
-  { key: 'earned', label: 'Earned', icon: Wallet, green: true }, { key: 'spent', label: 'Spent', icon: Receipt }, { key: 'profit', label: 'Profit', icon: PiggyBank, green: true },
+  { key: 'earned', label: 'Earned', icon: Wallet, green: true },
   { key: 'completed', label: 'Deals completed', icon: Handshake, green: true }, { key: 'avg', label: 'Average time to get paid', icon: Clock }, { key: 'onTime', label: 'Paid on time', icon: CircleCheck, green: true },
 ];
 
 export function Tiles({ k }: { k: Reports['kpis'] }) {
   return (
-    <section aria-label="Key numbers" className="grid gap-[13px] sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-      {TILES.map(t => <Tile key={t.key} label={t.label} icon={t.icon} green={t.green} v={k[t.key]} accent={t.key === 'profit' || t.key === 'earned'} />)}
+    <section aria-label="Key numbers" className="grid gap-[13px] sm:grid-cols-2 lg:grid-cols-4">
+      {TILES.map(t => <Tile key={t.key} label={t.label} icon={t.icon} green={t.green} v={k[t.key]} />)}
     </section>
   );
 }
 
-function Tile({ label, icon: I, green, v, accent }: { label: string; icon: LucideIcon; green?: boolean; v: Kpi; accent: boolean }) {
+function Tile({ label, icon: I, green, v }: { label: string; icon: LucideIcon; green?: boolean; v: Kpi }) {
   const none = v.value === '—';
   return (
     <div className={cx(CARD, 'flex flex-col gap-3 rounded-[24px] px-[19px] pb-5 pt-[18px] xl:min-h-[171px]')}>
@@ -51,7 +51,7 @@ function Tile({ label, icon: I, green, v, accent }: { label: string; icon: Lucid
         <span aria-hidden="true" className={cx('grid size-7 flex-none place-items-center rounded-full', green ? 'bg-[#DDF1EA] text-brand-ink' : 'bg-[#E6E7E8] text-ink-2')}><I size={15} /></span>
         <span className="min-w-0">{label}</span>
       </div>
-      <span className={cx('text-[36px] font-semibold leading-[1.1] tracking-[-0.02em]', none ? 'text-muted' : accent && v.value !== '₹0' && v.value.startsWith('-') ? 'text-danger' : accent && label === 'Profit' ? 'text-brand-ink' : '')}>{v.value}</span>
+      <span className={cx('text-[40px] font-semibold leading-[1.1] tracking-[-0.02em]', none && 'text-muted')}>{v.value}</span>
       {(v.delta || v.vs) ? (
         <div className="flex flex-wrap items-center gap-2 text-[13px] font-medium text-muted">
           {v.delta

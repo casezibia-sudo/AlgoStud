@@ -39,7 +39,7 @@ To refresh a screen after the design changes, run the converter again on the upd
 
 ## Data
 
-The prototype screens keep the demo data they had in the designs. `src/api` is the data layer: it runs on localStorage by default and on Supabase when `.env.local` has keys. Expenses (`window.ASX`) come from `src/api/expenses.ts` in both modes.
+The prototype screens keep the demo data they had in the designs. `src/api` is the data layer: it runs on localStorage by default and on Supabase when `.env.local` has keys.
 
 ## Backend (Supabase)
 

@@ -1,5 +1,6 @@
 import { effStage, nextStep, STAGE, type Account, type Deal } from '@/api';
 import { paidOnTime } from './milestones';
+import { openTotals } from './dealsView';
 import { DAY, daysFrom, fmtToday, fmtWhen, fmtShort, initials, istDate, todayISO } from './format';
 
 // Definitions for the Overview (one place, so every card agrees):
@@ -20,7 +21,7 @@ export interface RecordRow { id: string; dealId: string; title: string; sub: str
 export interface OverviewStats {
   header: { date: string; needCount: number };
   owed: { total: number; n: number; overdue: number; overdueN: number; next: { amount: number; label: string } | null };
-  pipeline: { confirmed: Segment; awaiting: Segment; overdue: Segment; paidN: number; activeTotal: number; activeN: number };
+  pipeline: { confirmed: Segment; awaiting: Segment; overdue: Segment; unconfirmed: Segment; paidN: number; openTotal: number; openN: number };
   needs: { rows: NeedRow[]; total: number };
   week: { range: string; rows: DueRow[]; nextDeadline: string | null };
   record: RecordRow[];
@@ -70,7 +71,8 @@ export function overviewStats(a: Account): OverviewStats {
     },
     pipeline: () => {
       const confirmed = seg(by('confirmed', 'wip', 'revision', 'submitted')), awaiting = seg(by('approved', 'due')), overdue = seg(by('overdue'));
-      return { confirmed, awaiting, overdue, paidN: by('paid').length, activeTotal: confirmed.amount + awaiting.amount + overdue.amount, activeN: confirmed.n + awaiting.n + overdue.n };
+      const t = openTotals(a);
+      return { confirmed, awaiting, overdue, unconfirmed: t.unconfirmed, paidN: by('paid').length, openTotal: t.open.amount, openN: t.open.n };
     },
     needs: () => {
       const all = needsAll();

@@ -57,7 +57,7 @@ export function Stages({ r }: { r: Reports }) {
                     <div className="mt-1 text-[14px] font-semibold opacity-90">{rupee(c.seg.amount)}</div>
                   </div>
                 </div>
-                <span className="absolute grid size-11 place-items-center rounded-full bg-white text-[20px] font-semibold shadow-[0_2px_8px_rgba(0,0,0,.12)]" style={{ left: `calc(${cx_[c.key]} - ${rr * 0.74}px - 22px)`, top: cy - rr * 0.74 - 22 }}>{c.seg.n}</span>
+                <span className="absolute grid size-11 place-items-center rounded-full bg-white text-[20px] font-semibold shadow-[0_2px_8px_rgba(0,0,0,.12)]" style={{ left: `max(8px, calc(${cx_[c.key]} - ${rr * 0.74}px - 22px))`, top: cy - rr * 0.74 - 22 }}>{c.seg.n}</span>
               </div>
             );
           })}

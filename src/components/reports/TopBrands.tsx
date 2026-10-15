@@ -46,7 +46,7 @@ export function TopBrands({ rows }: { rows: BrandRow[] }) {
               </span>
               <span className="text-right text-[14.5px] font-medium tabular-nums">{b.deals}</span>
               <span className="text-right text-[14.5px] font-medium tabular-nums">{rupee(b.earned)}</span>
-              <span className={cx('text-right text-[14.5px] font-medium tabular-nums', b.paysIn !== null && b.paysIn > SLOW ? 'text-danger' : '')}>{b.paysIn === null ? '—' : `${b.paysIn} days`}</span>
+              <span className={cx('text-right text-[14.5px] font-medium tabular-nums', b.paysIn !== null && b.paysIn > SLOW ? 'text-danger' : '')}>{b.paysIn === null ? "—" : `${b.paysIn} day${b.paysIn === 1 ? "" : "s"}`}</span>
               <span className="flex items-center gap-3 lg:pl-6">
                 <span className="h-[7px] min-w-0 max-w-[188px] flex-1 overflow-hidden rounded-full bg-[#E6E7E8]"><span className="block h-full rounded-full bg-[#0F9467]" style={{ width: `${Math.max(b.share, 2)}%` }} /></span>
                 <span className="w-9 text-right text-[14px] font-medium tabular-nums">{b.share}%</span>

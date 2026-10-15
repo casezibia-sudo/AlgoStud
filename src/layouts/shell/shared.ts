@@ -10,7 +10,14 @@ export function useDismiss(open: boolean, close: () => void, ref: RefObject<HTML
   useEffect(() => {
     if (!open) return;
     const h = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) close(); };
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    // Escape from inside the panel would otherwise leave focus on the page body: hand it back to the trigger.
+    const k = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const t = ref.current?.querySelector<HTMLElement>('[aria-expanded]');
+      const inside = !!ref.current?.contains(document.activeElement) && document.activeElement !== t;
+      close();
+      if (inside) t?.focus();
+    };
     addEventListener('mousedown', h); addEventListener('keydown', k);
     return () => { removeEventListener('mousedown', h); removeEventListener('keydown', k); };
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps

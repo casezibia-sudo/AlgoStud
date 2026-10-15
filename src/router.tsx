@@ -23,11 +23,9 @@ export const router = createBrowserRouter([
   { path: '/m', element: screen(() => import('./screens/MobileWebApp'), { bare: true }) },
   { path: '/brand', element: screen(() => import('./screens/BrandView')) },
 
-  // The design prototypes, kept for side-by-side comparison with the real app. Demo data, no login.
-  // Open these with a full page load (type the URL): the real app loads Tailwind, which restyles the prototypes.
-  { path: '/preview', element: screen(() => import('./screens/DesktopApp')) },
-  { path: '/preview/m', element: screen(() => import('./screens/MobileWebApp'), { bare: true }) },
-  { path: '/preview/brand', element: screen(() => import('./screens/BrandView')) },
+  // The homepage with the Privacy / Terms pop-up open (the footer links point here too).
+  { path: '/privacy', element: screen(() => import('./screens/Website'), { legal: 'privacy' }) },
+  { path: '/terms', element: screen(() => import('./screens/Website'), { legal: 'terms' }) },
 
   { path: '/login', element: <AuthProvider>{page(() => import('./pages/Login'))}</AuthProvider> },
 

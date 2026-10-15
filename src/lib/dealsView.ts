@@ -66,11 +66,26 @@ export function actionOf(d: Deal): Action | null {
   return { label: step.label.replace(/ to .*$/, '').replace(/ for .*$/, '') };
 }
 
+/** The one definition of "Open" for the whole app (Deals header, Overview, Reports):
+ *  every deal that is not paid, cancelled, declined or archived, drafts and sent offers included, at the agreed amount.
+ *  Overdue = open deals past their payment date. Active = open but not overdue.
+ *  Unconfirmed = the part of Open the brand has not confirmed yet (draft, sent, changes requested, link expired). */
+export interface OpenTotals { open: { amount: number; n: number }; overdue: { amount: number; n: number }; active: { amount: number; n: number }; unconfirmed: { amount: number; n: number } }
+export function openTotals(a: Account): OpenTotals {
+  const open = a.deals.filter(isOpen);
+  const seg = (l: Deal[]) => ({ amount: l.reduce((s, d) => s + d.n, 0), n: l.length });
+  const overdue = open.filter(d => effStage(d) === 'overdue');
+  return {
+    open: seg(open), overdue: seg(overdue), active: seg(open.filter(d => effStage(d) !== 'overdue')),
+    unconfirmed: seg(open.filter(d => ['draft', 'sent', 'changes', 'expired'].includes(effStage(d)))),
+  };
+}
+
 export interface DealsHeader { open: number; overdue: number; received: number; monthLabel: string; lateN: number; needN: number }
 export function dealsHeader(a: Account): DealsHeader {
   const month = todayISO().slice(0, 7), live = a.deals.filter(d => chipOf(d) !== null);
   return {
-    open: live.filter(isOpen).reduce((s, d) => s + d.n, 0),
+    open: openTotals(a).open.amount,
     overdue: live.filter(d => effStage(d) === 'overdue').reduce((s, d) => s + d.n, 0),
     received: live.filter(d => d.paidAt && d.paidAt.slice(0, 7) === month).reduce((s, d) => s + (d.received ?? d.n), 0),
     monthLabel: MON[+month.slice(5) - 1],
