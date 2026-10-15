@@ -4,6 +4,8 @@ import { effStage, nextStep, STAGE, useAccount } from '@/api';
 import { Button, Card, Empty, Segmented } from '@/components/ui';
 import { DealRow, PageHead, useDealAction } from '@/components/deal';
 import { DAY, firstName, inr } from '@/lib/format';
+import { dashboardStats } from '@/lib/dashboardStats';
+import { DealsFunnel, DueThisWeek, InsightsCarousel, MoneyAtRisk, NextPayout, SectionBoundary } from '@/components/dashboard';
 
 type Period = 30 | 90 | 365;
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -33,6 +35,7 @@ export default function Home() {
     };
   }, [a, period]);
 
+  const dash = useMemo(() => dashboardStats(a), [a]);
   const needs = a.deals.filter(d => STAGE[effStage(d)].turn === 'you' && nextStep(d));
   const waiting = a.deals.filter(d => STAGE[effStage(d)].turn === 'brand');
   const max = Math.max(1, ...stats.bars.map(b => b.v));
@@ -79,6 +82,15 @@ export default function Home() {
             ))}
           </div>
         </Card>
+      </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <SectionBoundary title="Money at risk"><MoneyAtRisk s={dash} /></SectionBoundary>
+        <SectionBoundary title="Next payout"><NextPayout d={dash.next} /></SectionBoundary>
+        <SectionBoundary title="Insights"><InsightsCarousel items={dash.insights} /></SectionBoundary>
+      </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <SectionBoundary title="Payments due this week"><DueThisWeek deals={dash.week} /></SectionBoundary>
+        <SectionBoundary title="Deals funnel"><DealsFunnel steps={dash.funnel} /></SectionBoundary>
       </div>
       {sheets}
     </>
