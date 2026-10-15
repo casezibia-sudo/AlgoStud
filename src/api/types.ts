@@ -6,6 +6,7 @@ export type Stage =
 /** The nine stages the database stores. The UI Stage above is derived from these (wip, due, overdue, archived...). */
 export type DbStage = 'draft' | 'sent' | 'confirmed' | 'in_progress' | 'submitted' | 'approved' | 'invoiced' | 'paid' | 'cancelled';
 
+export type PaymentStructure = 'full_after_posting' | 'advance_balance' | 'full_advance';
 export type Trigger = 'On approval' | 'On posting' | 'Days after posting' | 'Fixed date';
 export type Channel = 'WhatsApp' | 'Copy link' | 'Email' | 'Instagram DM';
 
@@ -74,6 +75,14 @@ export interface Deal {
   archivedAt?: string;
   /** When the deal was created (Supabase deals only). Used for a brand's "Since". */
   createdAt?: string;
+  /** The Create Deal form's extra terms. All optional: older deals have none of them. */
+  firstDraftDate?: string;
+  finalDeliveryDate?: string;
+  paymentStructure?: PaymentStructure;
+  /** Share paid up front (1-99), only with paymentStructure 'advance_balance'. */
+  advancePercent?: number;
+  /** The brand message pasted when the deal was created. Local demo only: Supabase deals don't load it. */
+  sourceMessage?: string;
   /** Supabase-backed deals only: the stage exactly as stored. */
   dbStage?: DbStage;
 }
@@ -119,6 +128,8 @@ export interface Payment { id: string; dealId: string; amount: number; date: str
 
 export interface Template {
   id: string; name: string; del: string; usage: string; usageFull: string; trigger: Trigger; rev: string; used: number;
+  /** Newer templates also keep the payment terms (older ones don't). */
+  payDays?: number; payStructure?: PaymentStructure; advancePct?: number;
 }
 
 export interface Reminder { dealId: string; kind: 'payment' | 'approval' | 'terms'; channel: string; text?: string; at: string }
@@ -172,4 +183,6 @@ export interface BrandLinkView {
   email: string;
 }
 
-export type DealDraft = Pick<Deal, 'brand' | 'contact' | 'email' | 'del' | 'n' | 'due' | 'trigger' | 'usage' | 'rev'> & { notes?: string; src?: string };
+export type DealDraft = Pick<Deal, 'brand' | 'contact' | 'email' | 'del' | 'n' | 'due' | 'trigger' | 'usage' | 'rev'>
+  & Partial<Pick<Deal, 'firstDraftDate' | 'finalDeliveryDate' | 'paymentStructure' | 'advancePercent'>>
+  & { notes?: string; src?: string; /** the pasted brand message, stored with the deal for later parsing */ message?: string };

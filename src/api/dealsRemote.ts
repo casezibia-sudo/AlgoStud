@@ -3,7 +3,7 @@
 // (rupees, Deal/Template/TermsVersion/DealEvent). Every write is an RPC; nothing here writes tables directly.
 import { sb } from './supabase';
 import { localApi, itemNames } from './local';
-import type { Account, Deal, DealDraft, DealEvent, DbStage, Stage, Template, TermsVersion, Tone, Trigger } from './types';
+import type { Account, Deal, DealDraft, DealEvent, DbStage, Stage, Template, TermsVersion, Tone, Trigger, PaymentStructure } from './types';
 import { fmtDate } from '@/lib/format';
 
 interface DealRow {
@@ -15,6 +15,8 @@ interface TermsRow {
   deal_id: string; version: number; status: string; deliverables: { text?: string }; amount_paise: number;
   dates: { fixed_date?: string }; usage_rights: string | null; revisions_included: number; payment_due_days: number | null;
   payment_trigger: Trigger | null; notes: string | null; sent_at: string | null; confirmed_at: string | null; created_at: string;
+  // Added by 20261016000000_deal_form_fields.sql (undefined until that migration is applied)
+  first_draft_date?: string | null; final_delivery_date?: string | null; payment_structure?: PaymentStructure | null; advance_percent?: number | null;
 }
 interface EventRow { id: string; deal_id: string; actor_type: DealEvent['actor']; type: string; payload: Record<string, any>; created_at: string }
 interface TemplateRow { id: string; name: string; terms: Record<string, any> }
@@ -55,6 +57,11 @@ export function termsArgs(f: Partial<DealDraft>) {
     payment_due_days: fixed ? null : parseDays(f.due),
     fixed_date: fixed ? parseDate(f.due) : null,
     notes: f.notes ?? '',
+    // The Create Deal form's extra terms. Only sent when set, so an older database simply ignores them.
+    ...(f.firstDraftDate ? { first_draft_date: f.firstDraftDate } : {}),
+    ...(f.finalDeliveryDate ? { final_delivery_date: f.finalDeliveryDate } : {}),
+    ...(f.paymentStructure ? { payment_structure: f.paymentStructure } : {}),
+    ...(f.paymentStructure === 'advance_balance' && f.advancePercent ? { advance_percent: f.advancePercent } : {}),
   };
 }
 export const headerArgs = (f: Partial<DealDraft>) => ({
@@ -80,6 +87,8 @@ function toDeal(r: DealRow, t: TermsRow, received: number): Deal {
     confirmedVersion: t.confirmed_at ? t.version : undefined,
     dueISO: r.payment_due_date || undefined, postedAt: r.posted_at || undefined, paidAt: r.paid_at || undefined,
     archivedAt: r.archived_at || undefined, createdAt: r.created_at || undefined, received: received || undefined,
+    firstDraftDate: t.first_draft_date || undefined, finalDeliveryDate: t.final_delivery_date || undefined,
+    paymentStructure: t.payment_structure || undefined, advancePercent: t.advance_percent ?? undefined,
   };
   if (r.stage === 'draft') d.missing = localApi.deals.missing(d);
   return d;
@@ -95,9 +104,13 @@ const toTemplate = (r: TemplateRow): Template => ({
   id: r.id, name: r.name, del: r.terms.deliverables_text || '', usage: usageLabel(r.terms.usage_rights || ''),
   usageFull: r.terms.usage_rights || '', trigger: r.terms.payment_trigger || 'On approval',
   rev: `${r.terms.revisions_included ?? 1} included`, used: Number(r.terms.used || 0),
+  payDays: r.terms.payment_due_days == null ? undefined : Number(r.terms.payment_due_days),
+  payStructure: r.terms.payment_structure || undefined, advancePct: r.terms.advance_percent == null ? undefined : Number(r.terms.advance_percent),
 });
-export const templateTerms = (t: Pick<Template, 'del' | 'usageFull' | 'trigger' | 'rev'>) => ({
+export const templateTerms = (t: Pick<Template, 'del' | 'usageFull' | 'trigger' | 'rev'> & Partial<Pick<Template, 'payDays' | 'payStructure' | 'advancePct'>>) => ({
   deliverables_text: t.del, usage_rights: t.usageFull, payment_trigger: t.trigger, revisions_included: parseDays(t.rev) ?? 1,
+  ...(t.payDays != null ? { payment_due_days: t.payDays } : {}), ...(t.payStructure ? { payment_structure: t.payStructure } : {}),
+  ...(t.advancePct != null ? { advance_percent: t.advancePct } : {}),
 });
 
 const need = <T,>(r: { data: T | null; error: { message: string } | null }): T => {
@@ -107,7 +120,8 @@ const need = <T,>(r: { data: T | null; error: { message: string } | null }): T =
 
 export async function loadDealData(payments: Account['payments'] = []): Promise<DealData> {
   const [deals, terms, events, templates] = await Promise.all([
-    sb.from('deals').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
+    // Explicit columns: source_message (the pasted brand message, up to 10,000 characters) is not needed to show deals.
+    sb.from('deals').select('id, brand_name, brand_email, brand_contact, source, title, stage, current_version, payment_due_date, posted_at, paid_at, archived_at, created_at').is('deleted_at', null).order('created_at', { ascending: false }),
     sb.from('deal_terms').select('*').order('version', { ascending: false }),
     sb.from('events').select('*').order('created_at', { ascending: false }),
     sb.from('templates').select('id, name, terms').order('created_at', { ascending: false }),

@@ -300,7 +300,8 @@ export const localApi = {
     },
     async create(draft: DealDraft) {
       const a = must();
-      const d: Deal = { id: uid('d'), stage: 'draft', first: itemNames(draft)[0] || '', src: draft.src || 'Manual', ...draft };
+      const { message, ...terms } = draft;
+      const d: Deal = { id: uid('d'), stage: 'draft', first: itemNames(draft)[0] || '', src: draft.src || 'Manual', ...terms, ...(message?.trim() ? { sourceMessage: message.trim() } : {}) };
       d.missing = localApi.deals.missing(d);
       a.deals.unshift(d);
       ev(a, d.id, { title: 'Draft created', tone: 'neutral' });

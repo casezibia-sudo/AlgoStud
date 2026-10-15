@@ -135,7 +135,8 @@ export const remoteApi = {
   deals: {
     ...localApi.deals,
     async create(draft: DealDraft) {
-      return write(() => rpc<string>('create_deal', { ...headerArgs(draft), p_title: draft.del, p_terms: termsArgs(draft) }));
+      // p_source_message is only sent when there is a message, so creating a deal still works before the migration that adds it.
+      return write(() => rpc<string>('create_deal', { ...headerArgs(draft), p_title: draft.del, p_terms: termsArgs(draft), ...(draft.message?.trim() ? { p_source_message: draft.message.trim() } : {}) }));
     },
     async update(id: string, fields: Partial<DealDraft>) {
       const d = dealOf(id);

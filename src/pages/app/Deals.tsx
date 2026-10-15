@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { effStage, STAGE, useAccount, type Deal } from '@/api';
 import { LATER } from '@/api/safe';
@@ -29,7 +29,8 @@ export default function Deals() {
 
   const chip = (CHIP_KEYS.has(params.get('stage') || '') ? params.get('stage') : null) as ChipKey | null;
   const view = params.get('view') === 'board' ? 'board' : 'list';
-  const brandKey = params.get('brand') || '';
+  // On /app/deals/new the Create Deal pop-up sits over this list and uses ?brand= to pre-fill itself, so it isn't a filter there.
+  const brandKey = useLocation().pathname.endsWith('/new') ? '' : (params.get('brand') || '');
   const later = (what: string) => toast(LATER(what));
 
   const live = useMemo(() => (a ? a.deals.filter(d => chipOf(d) !== null) : []), [a]);
