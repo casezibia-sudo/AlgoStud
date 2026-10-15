@@ -1,4 +1,5 @@
 import { effStage, nextStep, STAGE, type Account, type Deal } from '@/api';
+import { paidOnTime } from './milestones';
 import { DAY, daysFrom, fmtToday, fmtWhen, fmtShort, initials, istDate, todayISO } from './format';
 
 // Definitions for the Overview (one place, so every card agrees):
@@ -112,7 +113,7 @@ export function overviewStats(a: Account): OverviewStats {
       if (waiting.length) out.push({ big: String(waiting.length), head: `${waiting.length === 1 ? 'Deal is' : 'Deals are'} waiting on a brand.`, sub: 'These move forward as soon as the brand answers or pays.' });
       const measurable = deals.filter(d => d.paidAt && d.dueISO);
       if (measurable.length) {
-        const onTime = measurable.filter(d => istDate(d.paidAt!) <= d.dueISO!).length;
+        const onTime = measurable.filter(paidOnTime).length;
         out.push({ big: `${Math.round((onTime / measurable.length) * 100)}%`, head: `${onTime} of ${measurable.length} paid ${measurable.length === 1 ? 'deal was' : 'deals were'} paid on time.`, sub: 'Counted against the payment date in the terms the brand confirmed.' });
       }
       return out.slice(0, 3);

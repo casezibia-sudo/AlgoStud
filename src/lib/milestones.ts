@@ -32,12 +32,17 @@ export interface Milestones extends Basics {
   badges: Badge[];
 }
 
+/** Days a paid deal was paid after its payment date (India date; 0 or less = on time). The one "paid on time" rule:
+ *  Milestones, the Overview insight, the Brands payment record and Reports all use it. */
+export const daysPastDue = (d: Deal) => Math.round((Date.parse(istDate(d.paidAt!)) - Date.parse(d.dueISO!.slice(0, 10))) / 864e5);
+export const paidOnTime = (d: Deal) => daysPastDue(d) <= 0;
+
 const isClosed = (d: Deal) => !!d.paidAt || d.stage === 'paid';
 
 export function milestones(deals: Deal[]): Milestones {
   const paid = deals.filter(isClosed);
   const measurable = paid.filter(d => d.paidAt && d.dueISO);
-  const onTime = measurable.filter(d => istDate(d.paidAt!) <= d.dueISO!).length;
+  const onTime = measurable.filter(paidOnTime).length;
   const closed = paid.length;
   const rate = measurable.length ? onTime / measurable.length : 0;
   const basics: Basics = { closed, onTime, measurable: measurable.length, rate };

@@ -1,6 +1,7 @@
 import { type Account, type Deal } from '@/api';
 import { DAY } from './format';
 import { tint } from './dashboardStats';
+import { daysPastDue } from './milestones';
 
 // Brands are built from deals, grouped by brand name (trimmed, case-insensitive).
 //  - Earned: paid deals (what was received).
@@ -22,6 +23,15 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct
 export const sinceLabel = (iso: string) => `${MON[+iso.slice(5, 7) - 1]} ${iso.slice(0, 4)}`;
 const initialsOf = (s: string) => s.split(/\s+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
 
+/** Days from the "Payment due" event (written when a deal is invoiced) to the paid date, falling back to the approval date.
+ *  null when the deal isn't paid or has neither date. Brands ("Usually pays in") and Reports (average time to get paid) both use it. */
+export function daysToPay(a: Account, d: Deal): number | null {
+  if (!d.paidAt) return null;
+  const inv = a.events.filter(e => e.dealId === d.id && /^payment due/i.test(e.title)).sort((x, y) => x.at.localeCompare(y.at))[0];
+  const from = inv?.at || d.approvedAt;
+  return from ? Math.max(0, Math.round((day(d.paidAt) - day(from)) / DAY)) : null;
+}
+
 export function brandStats(a: Account): BrandRec[] {
   const groups = new Map<string, Deal[]>();
   a.deals.filter(d => d.stage !== 'cancelled' && d.stage !== 'declined').forEach(d => {
@@ -31,12 +41,7 @@ export function brandStats(a: Account): BrandRec[] {
   const recs = [...groups.entries()].map(([key, deals]): BrandRec => {
     const name = String(deals[0].brand).trim(), [bg, fg] = tint(name);
     const paid = deals.filter(d => d.paidAt || d.stage === 'paid');
-    const days = paid.flatMap(d => {
-      if (!d.paidAt) return [];
-      const inv = a.events.filter(e => e.dealId === d.id && /^payment due/i.test(e.title)).sort((x, y) => x.at.localeCompare(y.at))[0];
-      const from = inv?.at || d.approvedAt;
-      return from ? [Math.max(0, Math.round((day(d.paidAt) - day(from)) / DAY))] : [];
-    });
+    const days = paid.flatMap(d => { const n = daysToPay(a, d); return n === null ? [] : [n]; });
     const firstSeen = deals.map(d => d.createdAt || d.sentAt || a.events.filter(e => e.dealId === d.id).map(e => e.at).sort()[0]).filter(Boolean).sort()[0];
     const latest = [...deals].sort((x, y) => (y.sentAt || '').localeCompare(x.sentAt || ''))[0];
     return {
@@ -44,7 +49,7 @@ export function brandStats(a: Account): BrandRec[] {
       earned: paid.reduce((s, d) => s + (d.received ?? d.n), 0),
       open: deals.filter(d => !(d.paidAt || d.stage === 'paid' || d.stage === 'archived')).reduce((s, d) => s + d.n, 0),
       paysIn: days.length ? Math.round(days.reduce((s, n) => s + n, 0) / days.length) : null,
-      record: paid.filter(d => d.paidAt && d.dueISO).map(d => { const late = Math.round((day(d.paidAt!) - day(d.dueISO!)) / DAY); return { onTime: late <= 0, daysLate: Math.max(0, late) }; }),
+      record: paid.filter(d => d.paidAt && d.dueISO).map(d => { const late = daysPastDue(d); return { onTime: late <= 0, daysLate: Math.max(0, late) }; }),
       since: firstSeen ? firstSeen.slice(0, 10) : null,
       contact: latest?.contact || deals.find(d => d.contact)?.contact || '', email: latest?.email || deals.find(d => d.email)?.email || '',
       level: deals.length >= 3 ? 'repeat' : deals.length === 2 ? 'returning' : 'new',

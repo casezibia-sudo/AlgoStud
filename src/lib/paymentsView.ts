@@ -19,8 +19,8 @@ export const rupee = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN'
 export const monthName = (key: string) => FULL[+key.slice(5, 7) - 1];
 
 const outstanding = (d: Deal) => Math.max(0, d.n - (d.received || 0));
-const paidAmount = (d: Deal) => d.received ?? d.n;
-const paidDate = (d: Deal) => (d.paidAt ? istDate(d.paidAt) : '');
+export const paidAmount = (d: Deal) => d.received ?? d.n;
+export const paidDate = (d: Deal) => (d.paidAt ? istDate(d.paidAt) : '');
 const byDate = (x: HRow, y: HRow) => (x.date || '9').localeCompare(y.date || '9');
 
 export function historyRows(a: Account): HRow[] {
@@ -82,15 +82,21 @@ export function reminderMessage(r: HRow, creator: { paymentLink?: string }): str
 
 export interface MonthBar { key: string; label: string; full: string; amount: number }
 
-/** Paid amounts for the 7 months ending this month (Indian date). */
-export function monthlyReceived(a: Account): { bars: MonthBar[]; max: number; avg: number } {
+/** Paid amounts for the `n` months ending `back` months before this month (Indian date). Payments and Reports share it. */
+export function monthBars(a: Account, n: number, back = 0): MonthBar[] {
   const now = todayISO(), y = +now.slice(0, 4), m = +now.slice(5, 7) - 1;
   const bars: MonthBar[] = [];
-  for (let i = 6; i >= 0; i--) {
+  for (let i = n - 1 + back; i >= back; i--) {
     const t = y * 12 + m - i, yy = Math.floor(t / 12), mm = t % 12, key = `${yy}-${String(mm + 1).padStart(2, '0')}`;
     const amount = a.deals.filter(d => effStage(d) === 'paid' && paidDate(d).slice(0, 7) === key).reduce((s, d) => s + paidAmount(d), 0);
     bars.push({ key, label: MON[mm], full: `${FULL[mm]} ${yy}`, amount });
   }
+  return bars;
+}
+
+/** Paid amounts for the 7 months ending this month (Indian date). */
+export function monthlyReceived(a: Account): { bars: MonthBar[]; max: number; avg: number } {
+  const bars = monthBars(a, 7);
   const sum = bars.reduce((s, b) => s + b.amount, 0);
   return { bars, max: Math.max(...bars.map(b => b.amount)), avg: sum / bars.length };
 }
