@@ -126,6 +126,9 @@ const dealOf = (id: string): Deal => {
 const draftOf = (d: Deal): DealDraft => ({
   brand: d.brand, contact: d.contact, email: d.email, del: d.del, n: d.n, due: d.due, trigger: d.trigger,
   usage: d.usage, rev: d.rev, notes: d.notes, src: d.src,
+  // update_draft_terms overwrites these, so they must travel with every save or an edit would clear them.
+  firstDraftDate: d.firstDraftDate, finalDeliveryDate: d.finalDeliveryDate,
+  paymentStructure: d.paymentStructure, advancePercent: d.advancePercent,
 });
 const saveDraft = (id: string, f: DealDraft) =>
   rpc('update_draft_terms', { p_deal_id: id, ...headerArgs(f), p_terms: termsArgs(f) });
@@ -136,8 +139,7 @@ export const remoteApi = {
   deals: {
     ...localApi.deals,
     async create(draft: DealDraft) {
-      // p_source_message is only sent when there is a message, so creating a deal still works before the migration that adds it.
-      return write(() => rpc<string>('create_deal', { ...headerArgs(draft), p_title: draft.del, p_terms: termsArgs(draft), ...(draft.message?.trim() ? { p_source_message: draft.message.trim() } : {}) }));
+      return write(() => rpc<string>('create_deal', { ...headerArgs(draft), p_title: draft.del, p_terms: termsArgs(draft), p_source_message: draft.message?.trim() || null }));
     },
     async update(id: string, fields: Partial<DealDraft>) {
       const d = dealOf(id);

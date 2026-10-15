@@ -15,8 +15,8 @@ interface TermsRow {
   deal_id: string; version: number; status: string; deliverables: { text?: string }; amount_paise: number;
   dates: { fixed_date?: string }; usage_rights: string | null; revisions_included: number; payment_due_days: number | null;
   payment_trigger: Trigger | null; notes: string | null; sent_at: string | null; confirmed_at: string | null; created_at: string;
-  // Added by 20261016000000_deal_form_fields.sql (undefined until that migration is applied)
-  first_draft_date?: string | null; final_delivery_date?: string | null; payment_structure?: PaymentStructure | null; advance_percent?: number | null;
+  // Added by 20261016000000_deal_form_fields.sql
+  first_draft_date: string | null; final_delivery_date: string | null; payment_structure: PaymentStructure | null; advance_percent: number | null;
 }
 interface EventRow { id: string; deal_id: string; actor_type: DealEvent['actor']; type: string; payload: Record<string, any>; created_at: string }
 interface TemplateRow { id: string; name: string; terms: Record<string, any> }
@@ -57,11 +57,11 @@ export function termsArgs(f: Partial<DealDraft>) {
     payment_due_days: fixed ? null : parseDays(f.due),
     fixed_date: fixed ? parseDate(f.due) : null,
     notes: f.notes ?? '',
-    // The Create Deal form's extra terms. Only sent when set, so an older database simply ignores them.
-    ...(f.firstDraftDate ? { first_draft_date: f.firstDraftDate } : {}),
-    ...(f.finalDeliveryDate ? { final_delivery_date: f.finalDeliveryDate } : {}),
-    ...(f.paymentStructure ? { payment_structure: f.paymentStructure } : {}),
-    ...(f.paymentStructure === 'advance_balance' && f.advancePercent ? { advance_percent: f.advancePercent } : {}),
+    // The Create Deal form's extra terms. Always sent (null when empty) so nothing is dropped silently.
+    first_draft_date: f.firstDraftDate || null,
+    final_delivery_date: f.finalDeliveryDate || null,
+    payment_structure: f.paymentStructure || null,
+    advance_percent: f.paymentStructure === 'advance_balance' && f.advancePercent ? f.advancePercent : null,
   };
 }
 export const headerArgs = (f: Partial<DealDraft>) => ({
