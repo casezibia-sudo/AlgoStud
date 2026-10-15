@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Bell, CheckCircle2, Clock, Pencil, Send } from 'lucide-react';
 import { useAccount, type DealEvent, type Tone } from '@/api';
-import { istDate, todayISO } from '@/lib/format';
+import { fmtWhen } from '@/lib/format';
 import { circleBtn, panel, useDismiss } from './shared';
 
 const SEEN_KEY = 'as.events.seen';
@@ -16,12 +16,6 @@ const TONE: Record<Tone, { icon: typeof Clock; tile: string }> = {
   critical: { icon: AlertTriangle, tile: 'bg-danger-tint text-danger' },
   neutral: { icon: Clock, tile: 'bg-[#ECEDEE] text-[#3A3A40]' },
 };
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const hhmm = (iso: string) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso));
-function when(iso: string) {
-  const d = istDate(iso), today = todayISO(), yest = istDate(Date.parse(today) - 864e5);
-  return `${d === today ? 'Today' : d === yest ? 'Yesterday' : `${+d.slice(8)} ${MON[+d.slice(5, 7) - 1]}`}, ${hhmm(iso)}`;
-}
 
 /** Read-only list of the latest deal events. The dot counts only events NOT created by the creator, and only ones not yet seen. */
 export function NotificationsMenu() {
@@ -57,7 +51,7 @@ export function NotificationsMenu() {
                       <span className={`grid size-9 flex-none place-items-center rounded-[10px] ${t.tile}`}><Icon size={16} aria-hidden="true" /></span>
                       <span className="flex min-w-0 flex-col gap-0.5">
                         <span className="text-[13px] font-semibold leading-snug">{e.title}</span>
-                        <span className="truncate text-xs font-medium text-muted">{deal ? `${deal.brand} · ` : ''}{when(e.at)}</span>
+                        <span className="truncate text-xs font-medium text-muted">{deal ? `${deal.brand} · ` : ''}{fmtWhen(e.at)}</span>
                       </span>
                     </Link>
                   </li>

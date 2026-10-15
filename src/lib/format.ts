@@ -35,3 +35,17 @@ export const istDate = (t: Date | string | number) => IST_DATE.format(new Date(t
 export const todayISO = () => istDate(Date.now());
 export const daysFrom = (iso: string) => Math.round((Date.parse(iso) - Date.parse(todayISO())) / DAY);
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
+
+/** "Today, 14:32", "Yesterday, 18:05" or "5 Oct, 10:12", in India time. */
+export const fmtWhen = (iso: string | number) => {
+  const d = istDate(iso), today = todayISO(), yest = istDate(Date.parse(today) - DAY);
+  const hhmm = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso));
+  return `${d === today ? 'Today' : d === yest ? 'Yesterday' : `${+d.slice(8)} ${MON[+d.slice(5, 7) - 1]}`}, ${hhmm}`;
+};
+
+/** "Wednesday, 7 Oct" for today in India. */
+export const fmtToday = () => {
+  const t = todayISO();
+  const wd = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', weekday: 'long' }).format(new Date());
+  return `${wd}, ${+t.slice(8)} ${MON[+t.slice(5, 7) - 1]}`;
+};

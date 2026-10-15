@@ -65,3 +65,14 @@
   .no-print { display: none !important; }
   body { background: #fff; }
 }
+
+/* Overview > Insights card (names are prefixed so nothing else is affected). */
+@keyframes ov-drift { from { transform: translate(0,0) scale(1); } to { transform: translate(-34px,22px) scale(1.12); } }
+@keyframes ov-float-a { from { transform: rotate(38deg) translate(0,0); } to { transform: rotate(47deg) translate(-12px,10px); } }
+@keyframes ov-float-b { from { transform: rotate(38deg) translate(0,0); } to { transform: rotate(24deg) translate(10px,-8px); } }
+@keyframes ov-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.ov-shape-0 { animation: ov-drift 11s ease-in-out infinite alternate; }
+.ov-shape-1 { animation: ov-float-a 9s ease-in-out infinite alternate; }
+.ov-shape-2 { animation: ov-float-b 7s ease-in-out -2s infinite alternate; }
+.ov-fill-run { animation: ov-fill 6s linear forwards; }
+@media (prefers-reduced-motion: reduce) { .ov-shape-0, .ov-shape-1, .ov-shape-2, .ov-fill-run { animation: none !important; } }
