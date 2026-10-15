@@ -3,6 +3,12 @@
 // table, and income comes from the real payments and deals in the account.
 import { sb, remoteEnabled } from './supabase';
 import { api } from './index';
+import { isUnbuilt, LATER, notifyLater, warnOnce } from './safe';
+
+// The expenses and receipts tables are not built yet (see safe.ts). While that is true, the list stays empty,
+// no request is sent, and every attempt to save shows a visible notice instead of pretending to work.
+const EXPENSES_READY = !isUnbuilt('expenses');
+const RECEIPTS_READY = !isUnbuilt('receipts');
 
 export interface Expense { id: string; date: string; amount: number; category: string; note: string; dealId: string | null; receipt: string | null; taxDeductible: boolean }
 
@@ -28,9 +34,11 @@ const changed = () => {
   if (!remoteEnabled) try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* quota */ }
   subs.forEach(f => { try { f(); } catch { /* screen error */ } });
 };
-const write = (p: PromiseLike<{ error: unknown }>) => { if (remoteEnabled) Promise.resolve(p).then(r => { if (r.error) { console.error('[expenses]', r.error); void reload(); } }); };
+const blocked = () => remoteEnabled && !EXPENSES_READY;
+const write = (p: PromiseLike<{ error: unknown }>) => { if (remoteEnabled && EXPENSES_READY) Promise.resolve(p).then(r => { if (r.error) { console.error('[expenses]', r.error); void reload(); } }); };
 
 async function reload() {
+  if (blocked()) { warnOnce('expenses'); list = []; return; }
   const { data, error } = await sb.from('expenses').select('*').is('deleted_at', null);
   if (!error) { list = (data || []).map(fromRow); changed(); }
 }
@@ -68,22 +76,26 @@ export const expenses = {
   get: (id: string) => list.find(e => e.id === id) || null,
   add(e: Partial<Expense> & { amount: number; category: string }) {
     const x: Expense = { id: 'e' + Date.now().toString(36), date: todayISO(), dealId: null, receipt: null, taxDeductible: true, note: '', ...e };
+    if (blocked()) { notifyLater('Saving expenses'); return x; }
     list.push(x); this.setLastCategory(x.category); changed();
     write(sb?.from('expenses').insert(toRow(x)));
     return x;
   },
   update(id: string, patch: Partial<Expense>) {
-    list = list.map(e => (e.id === id ? { ...e, ...patch } : e)); changed();
+    if (blocked()) return notifyLater('Editing expenses');
+    list =list.map(e => (e.id === id ? { ...e, ...patch } : e)); changed();
     const e = this.get(id); if (e) write(sb?.from('expenses').update(toRow(e)).eq('id', id));
   },
   /** Soft delete; restore() undoes it. */
   remove(id: string) {
+    if (blocked()) { notifyLater('Deleting expenses'); return null; }
     const e = this.get(id); list = list.filter(x => x.id !== id); changed();
     write(sb?.from('expenses').update({ deleted_at: new Date().toISOString() }).eq('id', id));
     return e;
   },
   restore(e: Expense | null) {
     if (!e || this.get(e.id)) return;
+    if (blocked()) return notifyLater('Restoring expenses');
     list.push(e); changed();
     write(sb?.from('expenses').update({ deleted_at: null }).eq('id', e.id));
   },
@@ -111,10 +123,11 @@ export const expenses = {
     return rows;
   },
   csv() { return this.csvRows().map(r => r.map(v => (/[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : v)).join(',')).join('\n'); },
-  openQuickAdd(opts?: unknown) { window.dispatchEvent(new CustomEvent('asx-open', { detail: opts || {} })); },
+  openQuickAdd(opts?: unknown) { if (blocked()) return notifyLater('Adding expenses'); window.dispatchEvent(new CustomEvent('asx-open', { detail: opts || {} })); },
 
   /** Uploads a receipt photo or PDF and returns its storage path (remote only). */
   async uploadReceipt(file: File) {
+    if (remoteEnabled && !RECEIPTS_READY) { warnOnce('receipts'); throw new Error(LATER('Receipt uploads')); }
     const { data: u } = await sb.auth.getUser();
     const path = `${u.user!.id}/${Date.now().toString(36)}-${file.name}`;
     const { error } = await sb.storage.from('receipts').upload(path, file, { contentType: file.type });
@@ -123,6 +136,7 @@ export const expenses = {
   },
   /** Signed URL for showing a receipt full size; valid for 1 hour. */
   async receiptUrl(path: string) {
+    if (remoteEnabled && !RECEIPTS_READY) { warnOnce('receipts'); return null; }
     const { data } = await sb.storage.from('receipts').createSignedUrl(path, 3600);
     return data?.signedUrl || null;
   },

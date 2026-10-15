@@ -1,24 +1,26 @@
-// Supabase implementation of the API. Creator-side mutations reuse the exact logic in
-// local.ts on an in-memory copy of the account; after each change, the changed rows are
-// diffed and written to Postgres (RLS limits every write to the signed-in creator).
-// Brand-side calls go to the `brand` edge function, because brands have no account.
+// Supabase implementation of the API.
+// Slice 2: deals, versioned terms, events and templates are real tables written only through SQL
+// functions (see dealsRemote.ts). Everything else (links, answers, submissions, payments, reminders)
+// still reuses the logic in local.ts on an in-memory copy of the account, and the changed rows are
+// diffed and written to the document tables. Brand-side calls go to the `brand` edge function.
 import { localApi, localInternals } from './local';
 import { sb } from './supabase';
-import type { Account, Answer, AnswerInput, BrandLinkView, Creator, Submission, WorkAnswerInput } from './types';
+import { applyDealData, headerArgs, loadDealData, rpc, templateTerms, termsArgs } from './dealsRemote';
+import { isUnbuilt, LATER, warnOnce } from './safe';
+import type { Account, Answer, AnswerInput, BrandLinkView, Creator, DbStage, Deal, DealDraft, Submission, Template, WorkAnswerInput } from './types';
 
 type Doc = Record<string, unknown> & { dealId?: string };
 const TABLES: { field: keyof Account; table: string; key: (x: any) => string }[] = [
-  { field: 'deals', table: 'deals', key: x => x.id },
-  { field: 'termsVersions', table: 'terms_versions', key: x => `${x.dealId}:${x.n}` },
   { field: 'links', table: 'links', key: x => x.token },
   { field: 'answers', table: 'answers', key: x => `${x.token}:${x.item || ''}` },
   { field: 'submissions', table: 'submissions', key: x => x.id },
   { field: 'verifications', table: 'verifications', key: x => `${x.dealId}:${x.device}:${x.at}` },
   { field: 'payments', table: 'payments', key: x => x.id },
-  { field: 'events', table: 'events', key: x => x.id },
-  { field: 'templates', table: 'templates', key: x => x.id },
   { field: 'reminders', table: 'reminders', key: x => `${x.dealId}:${x.at}` },
 ];
+// Tables for features not built yet are skipped entirely (see safe.ts), so only LIVE ones are read or written.
+const LIVE = TABLES.filter(t => !isUnbuilt(t.table));
+TABLES.filter(t => isUnbuilt(t.table)).forEach(t => warnOnce(t.table));
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 let session: { email: string; at: string; userId: string } | null = null;
@@ -26,23 +28,32 @@ let synced: Account | null = null;
 let queue: Promise<unknown> = Promise.resolve();
 
 async function loadAccount(userId: string, email: string): Promise<Account> {
-  const [cr, ...docs] = await Promise.all([
-    sb.from('creators').select('data').eq('id', userId).maybeSingle(),
-    ...TABLES.map(t => sb.from(t.table).select('data').eq('user_id', userId)),
+  // The creator comes from profiles + settings (the old `creators` table is gone). A failure here is a real error.
+  const [p, s, ...docs] = await Promise.all([
+    sb.from('profiles').select('name, handle, payment_link, deletion_requested_at, deletion_scheduled_for, created_at').eq('id', userId).single(),
+    sb.from('settings').select('default_trigger, notify_answers, notify_expiring, notify_due_soon').eq('creator_id', userId).single(),
+    ...LIVE.map(t => sb.from(t.table).select('data').eq('user_id', userId)),
   ]);
-  const { deleted, ...creator } = (cr.data?.data || {}) as Creator & { deleted?: string[] };
-  const a = { creator: { ...creator, email }, deleted } as Account;
-  TABLES.forEach((t, i) => { (a as any)[t.field] = (docs[i].data || []).map(r => r.data); });
-  a.events.sort((x, y) => y.at.localeCompare(x.at));
+  if (p.error || !p.data) throw new Error(p.error?.message || 'Profile not found');
+  if (s.error || !s.data) throw new Error(s.error?.message || 'Settings not found');
+  const creator: Creator = {
+    email, name: p.data.name, handle: p.data.handle, paymentLink: p.data.payment_link ?? undefined,
+    defaultTrigger: s.data.default_trigger,
+    deletion: p.data.deletion_scheduled_for && p.data.deletion_requested_at ? { requestedAt: p.data.deletion_requested_at, scheduledFor: p.data.deletion_scheduled_for } : null,
+    createdAt: p.data.created_at,
+    prefs: { answers: s.data.notify_answers, expiring: s.data.notify_expiring, dueSoon: s.data.notify_due_soon },
+  };
+  const a = { creator, deals: [], termsVersions: [], events: [], templates: [], submissions: [], links: [], verifications: [], answers: [], payments: [], reminders: [] } as Account;
+  LIVE.forEach((t, i) => { (a as any)[t.field] = (docs[i].data || []).map(r => r.data); });
+  // deals, deal_terms, events and templates: any error is thrown, never swallowed.
+  applyDealData(a, await loadDealData(a.payments));
   return a;
 }
 
 async function push(prev: Account | null, next: Account) {
   const userId = session!.userId;
-  const creatorDoc = (a: Account | null) => (a ? JSON.stringify({ ...a.creator, deleted: a.deleted }) : '');
   const jobs: PromiseLike<unknown>[] = [];
-  if (creatorDoc(prev) !== creatorDoc(next)) jobs.push(sb.from('creators').update({ data: JSON.parse(creatorDoc(next)), updated_at: new Date().toISOString() }).eq('id', userId));
-  for (const t of TABLES) {
+  for (const t of LIVE) {
     const before = new Map(((prev?.[t.field] as Doc[]) || []).map(x => [t.key(x), JSON.stringify(x)]));
     const up: Doc[] = [], seen = new Set<string>();
     for (const x of (next[t.field] as Doc[]) || []) { const k = t.key(x); seen.add(k); if (before.get(k) !== JSON.stringify(x)) up.push(x); }
@@ -95,8 +106,103 @@ async function refresh(token: string) {
   finally { inflight.delete(token); localInternals.notify(); }
 }
 
+/** Re-reads deals, terms, events and templates after a change, so every screen shows what the database holds. */
+async function refreshDeals() {
+  if (!session) return;
+  const data = await loadDealData(localApi.snapshot().account?.payments);
+  localInternals.patch(a => applyDealData(a, data));
+}
+/** Runs a database write, then refreshes. Errors surface to the caller as Error(message). */
+async function write<T>(fn: () => Promise<T>): Promise<T> {
+  try { return await fn(); } finally { await refreshDeals(); }
+}
+const dealOf = (id: string): Deal => {
+  const d = localApi.snapshot().account?.deals.find(x => x.id === id);
+  if (!d) throw new Error('Not found');
+  return d;
+};
+/** The form fields for a deal, as the UI shows them. */
+const draftOf = (d: Deal): DealDraft => ({
+  brand: d.brand, contact: d.contact, email: d.email, del: d.del, n: d.n, due: d.due, trigger: d.trigger,
+  usage: d.usage, rev: d.rev, notes: d.notes, src: d.src,
+});
+const saveDraft = (id: string, f: DealDraft) =>
+  rpc('update_draft_terms', { p_deal_id: id, ...headerArgs(f), p_terms: termsArgs(f) });
+
 export const remoteApi = {
   ...localApi,
+
+  deals: {
+    ...localApi.deals,
+    async create(draft: DealDraft) {
+      return write(() => rpc<string>('create_deal', { ...headerArgs(draft), p_title: draft.del, p_terms: termsArgs(draft) }));
+    },
+    async update(id: string, fields: Partial<DealDraft>) {
+      const d = dealOf(id);
+      if (d.dbStage !== 'draft') throw new Error('Only drafts can be edited directly. Send a new version instead.');
+      await write(() => saveDraft(id, { ...draftOf(d), ...fields }));
+    },
+    /** Soft delete: the row stays, with its audit history. */
+    async remove(id: string) { await write(() => rpc('delete_deal', { p_deal_id: id })); },
+    async cancel(id: string) { await write(() => rpc('update_stage', { p_deal_id: id, p_to: 'cancelled' })); },
+    /** Locks the draft terms and moves the deal to Sent. No brand link exists yet. */
+    async sendLink(dealId: string, channel: string, _opts: { replaces?: number; token?: string } = {}) {
+      await write(() => rpc('send_terms', { p_deal_id: dealId, p_channel: channel }));
+      return '';
+    },
+    /** Sent or confirmed terms are locked: start version N+1 as a draft, fill it in, then send it. */
+    async sendNewVersion(dealId: string, fields: Partial<DealDraft>, channel: string, _token?: string) {
+      const d = dealOf(dealId);
+      await write(async () => {
+        if (d.dbStage !== 'draft') await rpc('revise_terms', { p_deal_id: dealId });
+        await saveDraft(dealId, { ...draftOf(d), ...fields });
+        await rpc('send_terms', { p_deal_id: dealId, p_channel: channel });
+      });
+      return '';
+    },
+    async addPosting(id: string, date: string) { await write(() => rpc('set_posting_date', { p_deal_id: id, p_date: date })); },
+
+    // Creator-only tools that exist only in Supabase mode (check isRemote before calling).
+    async setStage(id: string, to: DbStage, paidAt?: string) { await write(() => rpc('update_stage', { p_deal_id: id, p_to: to, p_paid_at: paidAt ?? null })); },
+    async archive(id: string) { await write(() => rpc('archive_deal', { p_deal_id: id })); },
+    async unarchive(id: string) { await write(() => rpc('unarchive_deal', { p_deal_id: id })); },
+    async duplicate(id: string) { return write(() => rpc<string>('duplicate_deal', { p_deal_id: id })); },
+    async saveAsTemplate(id: string, name: string) { return write(() => rpc<string>('create_template_from_deal', { p_deal_id: id, p_name: name })); },
+  },
+
+  templates: {
+    async add(t: Omit<Template, 'id' | 'used'>) { await write(() => rpc('create_template', { p_name: t.name, p_terms: templateTerms(t) })); },
+    async update(id: string, p: Partial<Template>) {
+      const t = localApi.snapshot().account?.templates.find(x => x.id === id);
+      if (!t) throw new Error('Not found');
+      const m = { ...t, ...p };
+      await write(() => rpc('update_template', { p_id: id, p_name: m.name, p_terms: templateTerms(m) }));
+    },
+    async remove(id: string) { await write(() => rpc('delete_template', { p_id: id })); },
+    async use(id: string) { await write(() => rpc('use_template', { p_id: id })); },
+    /** New draft deal with the template's terms. Returns the deal id. */
+    async createDeal(id: string) { return write(() => rpc<string>('create_deal_from_template', { p_template_id: id })); },
+  },
+
+  work: {
+    ...localApi.work,
+    async submit(_dealId: string, _item: string, _sub: { link: string; note?: string }): Promise<string> {
+      throw new Error('Deliverable tracking arrives in a later update. Mark the deal as submitted instead.');
+    },
+  },
+
+  payments: {
+    ...localApi.payments,
+    /** There is no payments table yet, so the only thing recorded is the deal moving to Paid (full amount only). */
+    async markPaid(id: string, p: { amount: number; date: string; ref: string }) {
+      const d = dealOf(id);
+      if (p.amount < d.n) throw new Error(LATER('Recording part payments'));
+      await write(() => rpc('update_stage', { p_deal_id: id, p_to: 'paid', p_paid_at: p.date }));
+    },
+    async logReminder(_id: string, _channel: string, _kind: 'payment' | 'approval' | 'terms', _text?: string) {
+      throw new Error(LATER('Logging reminders'));
+    },
+  },
 
   auth: {
     session: () => (session ? { email: session.email, at: session.at } : null),

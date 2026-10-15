@@ -3,6 +3,9 @@ export type Stage =
   | 'confirmed' | 'wip' | 'submitted' | 'revision' | 'approved'
   | 'due' | 'overdue' | 'paid' | 'archived';
 
+/** The nine stages the database stores. The UI Stage above is derived from these (wip, due, overdue, archived...). */
+export type DbStage = 'draft' | 'sent' | 'confirmed' | 'in_progress' | 'submitted' | 'approved' | 'invoiced' | 'paid' | 'cancelled';
+
 export type Trigger = 'On approval' | 'On posting' | 'Days after posting' | 'Fixed date';
 export type Channel = 'WhatsApp' | 'Copy link' | 'Email' | 'Instagram DM';
 
@@ -69,6 +72,8 @@ export interface Deal {
   lastReminderChannel?: string;
   reminders?: number;
   archivedAt?: string;
+  /** Supabase-backed deals only: the stage exactly as stored. */
+  dbStage?: DbStage;
 }
 
 export interface TermsSnapshot { brand: string; contact: string; del: string; n: number; due: string | null; trigger: Trigger; usage: string | null; rev: string }
@@ -124,6 +129,17 @@ export interface Prefs { dueSoon: boolean; expiring: boolean; answers: boolean }
 export interface Creator {
   email: string; name: string; handle: string; paymentLink?: string; defaultTrigger?: Trigger;
   deletion: { requestedAt: string; scheduledFor: string } | null; createdAt: string; prefs?: Prefs;
+}
+
+/** Rows in Supabase `profiles` and `settings` (supabase/migrations/0001). */
+export interface Profile {
+  id: string; name: string; handle: string; payment_link: string | null;
+  deletion_requested_at: string | null; deletion_scheduled_for: string | null;
+  created_at?: string;
+}
+export interface CreatorSettings {
+  creator_id: string; default_trigger: Trigger;
+  notify_answers: boolean; notify_expiring: boolean; notify_due_soon: boolean;
 }
 
 export interface Account {

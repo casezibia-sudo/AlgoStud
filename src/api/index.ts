@@ -7,7 +7,9 @@ import { daysFrom, todayISO } from '@/lib/format';
 
 // Supabase when VITE_SUPABASE_URL is set, otherwise the localStorage demo.
 if (remoteEnabled) startRemote();
-export const api: typeof remoteApi = remoteEnabled ? remoteApi : localApi;
+export const api: typeof remoteApi = (remoteEnabled ? remoteApi : localApi) as typeof remoteApi;
+/** True when deals live in Supabase. The extra remote-only API methods exist only in this mode. */
+export const isRemote = remoteEnabled;
 export * from './types';
 
 export function useStore() {

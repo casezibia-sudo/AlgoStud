@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Copy, ExternalLink, FileText } from 'lucide-react';
-import { api, effStage, nextStep, STAGE, TRACK, trackIndex, useAccount } from '@/api';
+import { api, effStage, isRemote, nextStep, STAGE, TRACK, trackIndex, useAccount } from '@/api';
 import { Button, Card, Label, Pill, Sheet, useToast } from '@/components/ui';
-import { StagePill, SubmitSheet, useDealAction, PaidSheet } from '@/components/deal';
+import { StagePill, SubmitSheet, useDealAction, PaidSheet, RemoteTools, BRAND_LATER } from '@/components/deal';
 import { copy } from '@/components/share';
 import { cx, daysFrom, fmtDate, fmtTime, inr } from '@/lib/format';
 import NotFound from '../NotFound';
@@ -27,6 +27,9 @@ export default function DealDetail() {
   const items = Object.entries(api.deals.items(d));
   const events = api.deals.eventsFor(d.id);
   const closed = ['paid', 'cancelled', 'declined', 'archived'].includes(s);
+  // Supabase mode: brands can't answer online yet and item tracking isn't stored, so only creator-side steps run from here.
+  const stepRuns = !isRemote || (!!step && ['edit', 'send', 'posting', 'remind-pay'].includes(step.kind));
+  const canChangeTerms = !closed && (!isRemote || ['draft', 'sent', 'confirmed'].includes(d.dbStage || ''));
   const terms: [string, string][] = [
     ['Brand', `${d.brand}${d.contact ? ' · ' + d.contact : ''}`], ['Contact email', d.email || '—'], ['Deliverables', d.del || '—'], ['Amount', d.n ? inr(d.n) : '—'],
     ['Payment', `${d.trigger}${d.due ? ' · ' + d.due : ''}`], ['Usage rights', d.usage || 'Not added'], ['Revisions', d.rev],
@@ -60,17 +63,19 @@ export default function DealDetail() {
           {step && (
             <Card className="p-5 lg:p-6 flex flex-col gap-3">
               <Label>{meta.turn === 'brand' ? `Waiting on ${d.brand}` : 'Next step'}</Label>
-              <p className="m-0 text-[15px] font-semibold text-pretty">{step.hint}</p>
+              <p className="m-0 text-[15px] font-semibold text-pretty">{isRemote && !stepRuns ? BRAND_LATER : step.hint}</p>
               {d.changes && s === 'changes' && <div className="rounded-xl bg-warn-tint px-4 py-3 text-[13px] font-medium text-warn">“{d.changes.note}” · {d.changes.by}</div>}
               {s === 'sent' && link && <div className="text-[13px] font-medium text-muted">Sent {fmtTime(link.createdAt)} on {link.channel} · {link.firstOpenedAt ? 'Opened ' + fmtTime(link.firstOpenedAt) : 'Not opened yet'} · Expires {fmtDate(link.expiresAt!)} ({daysFrom(link.expiresAt!)} days)</div>}
               <div className="flex flex-wrap gap-2 pt-1">
-                <Button variant="primary" onClick={() => run(d)}>{step.label}</Button>
-                {['approved', 'due'].includes(d.stage) && <Button onClick={() => setPaying(true)}>Mark as paid</Button>}
+                {stepRuns && <Button variant="primary" onClick={() => run(d)}>{step.label}</Button>}
+                {!isRemote && ['approved', 'due'].includes(d.stage) && <Button onClick={() => setPaying(true)}>Mark as paid</Button>}
               </div>
             </Card>
           )}
 
-          {items.length > 0 && !['draft', 'sent', 'changes', 'expired', 'declined', 'cancelled'].includes(d.stage) && (
+          {isRemote && <RemoteTools d={d} onPay={() => setPaying(true)} />}
+
+          {!isRemote && items.length > 0 && !['draft', 'sent', 'changes', 'expired', 'declined', 'cancelled'].includes(d.stage) && (
             <Card className="overflow-hidden">
               <div className="px-5 pt-5 pb-2 lg:px-6"><h2 className="m-0 text-base font-semibold">Deliverables</h2></div>
               <ul className="m-0 list-none p-0 divide-y divide-line">
@@ -87,7 +92,7 @@ export default function DealDetail() {
 
           <Card className="p-5 lg:p-6 flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3"><h2 className="m-0 text-base font-semibold">{d.confirmedAt ? `Confirmed terms · v${d.confirmedVersion || 1} · locked` : d.stage === 'draft' ? 'Terms' : `Terms sent · v${d.version || 1}`}</h2>
-              {!closed && <Button size="sm" onClick={() => nav(`/app/deals/${d.id}/edit`)}>{d.stage === 'draft' ? 'Edit' : 'Change terms'}</Button>}</div>
+              {canChangeTerms && <Button size="sm" onClick={() => nav(`/app/deals/${d.id}/edit`)}>{d.stage === 'draft' ? 'Edit' : 'Change terms'}</Button>}</div>
             <dl className="m-0 grid grid-cols-[120px_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-sm">
               {terms.map(([k, v]) => <div key={k} className="contents"><dt className="font-semibold text-muted">{k}</dt><dd className={cx('m-0 font-medium', v === 'Not added' && 'text-warn')}>{v}</dd></div>)}
             </dl>

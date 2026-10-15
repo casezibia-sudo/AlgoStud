@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
-import { api, effStage, nextStep, STAGE, useAccount, type Deal } from '@/api';
+import { api, effStage, isRemote, nextStep, STAGE, useAccount, type DbStage, type Deal } from '@/api';
 import { Avatar, Button, Field, Input, Pill, Select, Sheet, Textarea, useToast } from './ui';
 import { SendSheet } from './share';
 import { firstName, fmtDate, inr, todayISO } from '@/lib/format';
@@ -39,6 +39,13 @@ export function DealRow({ d, action }: { d: Deal; action?: ReactNode }) {
   );
 }
 
+export const BRAND_LATER = 'Brand links arrive in the next update.';
+const LATER_LOG = 'Logging reminders arrives in a later update, so this was not recorded.';
+
+/** Terms message with no link, for Supabase mode where brands can't answer online yet. */
+export const remoteTermsMessage = (d: Deal, creator: string) =>
+  `Hi ${firstName(d.contact)}, here are the terms for ${d.brand}:\n${d.del} · ${inr(d.n)}\nPayment: ${d.trigger}${d.due ? ' · ' + d.due : ''}\nUsage: ${d.usage || 'Not added'}\nRevisions: ${d.rev}\nPlease reply to confirm.\nThanks, ${firstName(creator)}`;
+
 const messages = (d: Deal, creator: string, url = '') => {
   const fn = firstName(d.contact), me = firstName(creator) || '';
   return {
@@ -64,7 +71,7 @@ export function useDealAction() {
   const run = (d: Deal, kind = nextStep(d)?.kind) => {
     if (!kind) return;
     if (kind === 'edit' || kind === 'new-version') return nav(`/app/deals/${d.id}/edit`);
-    if (kind === 'send' || kind === 'resend') return setSt({ kind, d, token: api.deals.prepareToken() });
+    if (kind === 'send' || kind === 'resend') return setSt({ kind, d, token: isRemote ? undefined : api.deals.prepareToken() });
     setSt({ kind, d });
   };
 
@@ -75,15 +82,18 @@ export function useDealAction() {
     const apprTok = api.deals.activeLink(d.id, 'a')?.token;
     const url = (t?: string) => (t ? `${location.origin}/${st.kind.includes('approval') ? 'a' : 'd'}/${t}` : '');
     const m = messages(d, creator, url(st.token || (st.kind === 'remind-approval' ? apprTok : termsTok)));
-    if (st.kind === 'send' || st.kind === 'resend')
+    if ((st.kind === 'send' || st.kind === 'resend') && isRemote)
+      sheets = <SendSheet open onClose={close} title={`Send terms to ${d.brand}`} message={remoteTermsMessage(d, creator)} subject={`Terms for ${d.del}`} note={BRAND_LATER + ' Share the terms yourself; sending locks them as version ' + (d.version || 1) + '.'}
+        onSent={async c => { try { await api.deals.sendLink(d.id, c); toast('Terms sent and locked.'); } catch (e) { toast((e as Error).message); } }} />;
+    else if (st.kind === 'send' || st.kind === 'resend')
       sheets = <SendSheet open onClose={close} title={`Send terms to ${d.brand}`} message={m.terms} subject={`Terms for ${d.del}`} note={`${firstName(d.contact)} confirms with a code sent to ${d.email}. The link works for 7 days.`}
         onSent={async c => { try { await api.deals.sendLink(d.id, c, { token: st.token }); toast(c === 'Copy link' ? 'Link copied.' : `Link shared on ${c}.`); } catch (e) { toast((e as Error).message); } }} />;
     if (st.kind === 'remind-terms' || st.kind === 'remind-approval')
       sheets = <SendSheet open onClose={close} title={`Remind ${d.brand}`} message={st.kind === 'remind-terms' ? m.remindTerms : m.remindApproval}
-        onSent={async (c, text) => { await api.payments.logReminder(d.id, c, st.kind === 'remind-terms' ? 'terms' : 'approval', text); toast('Reminder logged.'); }} />;
+        onSent={async (c, text) => { if (isRemote) return void toast('Message opened. ' + LATER_LOG); await api.payments.logReminder(d.id, c, st.kind === 'remind-terms' ? 'terms' : 'approval', text); toast('Reminder logged.'); }} />;
     if (st.kind === 'remind-pay' && a)
       sheets = <SendSheet open onClose={close} title={`Payment reminder to ${d.brand}`} message={paymentMessage(d, a.creator)}
-        onSent={async (c, text) => { await api.payments.logReminder(d.id, c, 'payment', text); toast('Reminder logged.'); }} />;
+        onSent={async (c, text) => { if (isRemote) return void toast('Message opened. ' + LATER_LOG); await api.payments.logReminder(d.id, c, 'payment', text); toast('Reminder logged.'); }} />;
     if (st.kind === 'submit') sheets = <SubmitSheet d={d} onClose={close} />;
     if (st.kind === 'posting') sheets = <PostingSheet d={d} onClose={close} />;
     if (st.kind === 'paid') sheets = <PaidSheet d={d} onClose={close} />;
@@ -131,10 +141,61 @@ export function PaidSheet({ d, onClose }: { d: Deal; onClose: () => void }) {
   const [ref, setRef] = useState('');
   const toast = useToast();
   return (
-    <Sheet open onClose={onClose} title={`Mark ${d.brand} as paid`} footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={async () => { await api.payments.markPaid(d.id, { amount: +amount || 0, date, ref }); toast('Payment recorded.'); onClose(); }}>Mark as paid</Button></>}>
+    <Sheet open onClose={onClose} title={`Mark ${d.brand} as paid`} footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={async () => { try { await api.payments.markPaid(d.id, { amount: +amount || 0, date, ref }); toast('Payment recorded.'); onClose(); } catch (e) { toast((e as Error).message); } }}>Mark as paid</Button></>}>
       <Field label="Amount received (₹)" hint={`Agreed: ${inr(d.n)}`}>{id => <Input id={id} inputMode="numeric" value={amount} onChange={e => setAmount(e.target.value.replace(/\D/g, ''))} />}</Field>
       <Field label="Date received">{id => <Input id={id} type="date" max={todayISO()} value={date} onChange={e => setDate(e.target.value)} />}</Field>
       <Field label="Reference / UTR (optional)">{id => <Input id={id} value={ref} onChange={e => setRef(e.target.value)} />}</Field>
     </Sheet>
+  );
+}
+
+const MANUAL: Partial<Record<DbStage, { label: string; to: DbStage; primary?: boolean }[]>> = {
+  sent: [{ label: 'Mark terms confirmed', to: 'confirmed', primary: true }],
+  confirmed: [{ label: 'Start work', to: 'in_progress', primary: true }],
+  in_progress: [{ label: 'Mark submitted', to: 'submitted', primary: true }],
+  submitted: [{ label: 'Mark approved', to: 'approved', primary: true }, { label: 'Revision requested', to: 'in_progress' }],
+  approved: [{ label: 'Mark invoiced', to: 'invoiced' }],
+};
+
+/** Supabase mode only: brands can't answer online yet, so the creator moves the deal along by hand. */
+export function RemoteTools({ d, onPay }: { d: Deal; onPay: () => void }) {
+  const nav = useNavigate();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState('');
+  const stage = d.dbStage;
+  if (!stage) return null;
+  const go = async (fn: () => Promise<unknown>, done: string) => {
+    setBusy(true);
+    try { await fn(); toast(done); } catch (e) { toast((e as Error).message); } finally { setBusy(false); }
+  };
+  const moves = MANUAL[stage] || [];
+  const canPay = stage === 'approved' || stage === 'invoiced';
+  const canArchive = stage === 'paid' || stage === 'cancelled';
+  return (
+    <>
+      <div className="rounded-xl bg-subtle p-4 flex flex-col gap-3">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[13px] font-semibold">Update this deal yourself</span>
+          <span className="text-xs font-medium text-muted">{BRAND_LATER} Each change is saved to the record.</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {moves.map(m => <Button key={m.to + m.label} size="sm" variant={m.primary ? 'primary' : undefined} disabled={busy} onClick={() => go(() => api.deals.setStage(d.id, m.to), 'Saved.')}>{m.label}</Button>)}
+          {canPay && <Button size="sm" variant={stage === 'invoiced' ? 'primary' : undefined} disabled={busy} onClick={onPay}>Mark as paid</Button>}
+          {canArchive && (d.archivedAt
+            ? <Button size="sm" disabled={busy} onClick={() => go(() => api.deals.unarchive(d.id), 'Restored.')}>Unarchive</Button>
+            : <Button size="sm" disabled={busy} onClick={() => go(() => api.deals.archive(d.id), 'Archived.')}>Archive</Button>)}
+          <Button size="sm" disabled={busy} onClick={() => go(async () => nav(`/app/deals/${await api.deals.duplicate(d.id)}`), 'Deal duplicated.')}>Duplicate</Button>
+          <Button size="sm" disabled={busy} onClick={() => { setName(`${d.brand} terms`); setNaming(true); }}>Save as template</Button>
+        </div>
+      </div>
+      {naming && (
+        <Sheet open onClose={() => setNaming(false)} title="Save as template"
+          footer={<><Button onClick={() => setNaming(false)}>Cancel</Button><Button variant="primary" disabled={!name.trim() || busy} onClick={async () => { await go(() => api.deals.saveAsTemplate(d.id, name.trim()), 'Template saved.'); setNaming(false); }}>Save template</Button></>}>
+          <Field label="Template name">{id => <Input id={id} value={name} onChange={e => setName(e.target.value)} />}</Field>
+        </Sheet>
+      )}
+    </>
   );
 }

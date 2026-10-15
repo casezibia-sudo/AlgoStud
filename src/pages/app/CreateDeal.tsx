@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ClipboardPaste } from 'lucide-react';
-import { api, useAccount, type DealDraft, type Trigger } from '@/api';
+import { api, isRemote, useAccount, type DealDraft, type Trigger } from '@/api';
 import { Button, Card, Field, Input, Label, Select, Textarea, useToast } from '@/components/ui';
 import { SendSheet } from '@/components/share';
 import { cx, firstName, inr } from '@/lib/format';
@@ -45,15 +45,19 @@ export default function CreateDeal() {
     api.templates.use(tid); toast(`Filled from “${t.name}”`);
   };
   const saveDraft = async () => {
-    if (existing && !versionMode) { await api.deals.update(existing.id, f); toast('Draft saved.'); return nav(`/app/deals/${existing.id}`); }
-    const nid = await api.deals.create(f); toast('Draft saved.'); nav(`/app/deals/${nid}`);
+    try {
+      if (existing && !versionMode) { await api.deals.update(existing.id, f); toast('Draft saved.'); return nav(`/app/deals/${existing.id}`); }
+      const nid = await api.deals.create(f); toast('Draft saved.'); nav(`/app/deals/${nid}`);
+    } catch (e) { toast((e as Error).message); }
   };
   const trySend = async () => {
     if (missing.length) return setShowErr(true);
-    if (versionMode) return setSending(api.deals.prepareToken());
-    let did = existing?.id;
-    if (did) await api.deals.update(did, f); else did = await api.deals.create(f);
-    nav(`/app/deals/${did}`);
+    if (versionMode) return setSending(isRemote ? 'remote' : api.deals.prepareToken());
+    try {
+      let did = existing?.id;
+      if (did) await api.deals.update(did, f); else did = await api.deals.create(f);
+      nav(`/app/deals/${did}`);
+    } catch (e) { toast((e as Error).message); }
   };
   const err = (k: string) => (showErr && missing.includes(k) ? 'Needed to send' : undefined);
   const v = (existing?.version || 1) + 1;
@@ -110,8 +114,11 @@ export default function CreateDeal() {
 
       {sending && existing && (
         <SendSheet open onClose={() => setSending(null)} title={`Send version ${v} to ${existing.brand}`}
-          message={`Hi ${firstName(f.contact)}, I've updated the terms for ${f.del} (version ${v}): ${location.origin}/d/${sending}\nPlease confirm the new version. Thanks, ${firstName(a.creator.name)}`}
-          onSent={async c => { await api.deals.sendNewVersion(existing.id, f, c, sending); toast(`Version ${v} sent.`); nav(`/app/deals/${existing.id}`); }} />
+          message={isRemote
+            ? `Hi ${firstName(f.contact)}, I've updated the terms for ${f.del} (version ${v}): ${inr(f.n)}, payment ${f.trigger}${f.due ? ' · ' + f.due : ''}, usage: ${f.usage}.\nPlease confirm the new version. Thanks, ${firstName(a.creator.name)}`
+            : `Hi ${firstName(f.contact)}, I've updated the terms for ${f.del} (version ${v}): ${location.origin}/d/${sending}\nPlease confirm the new version. Thanks, ${firstName(a.creator.name)}`}
+          note={isRemote ? 'Brand links arrive in the next update. Share the terms yourself; sending locks this version.' : undefined}
+          onSent={async c => { try { await api.deals.sendNewVersion(existing.id, f, c, sending); toast(`Version ${v} sent.`); nav(`/app/deals/${existing.id}`); } catch (e) { toast((e as Error).message); } }} />
       )}
     </div>
   );

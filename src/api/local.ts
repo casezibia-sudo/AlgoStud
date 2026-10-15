@@ -203,6 +203,8 @@ export const localInternals = {
   remoteMode() { persistLocal = false; state = { schema: SCHEMA, session: null, accounts: {} }; notify(); },
   hydrate(email: string, a: Account | null) { state = { schema: SCHEMA, session: a ? { email, at: iso() } : null, accounts: a ? { [email]: a } : {} }; notify(); },
   notify,
+  /** Change the signed-in account in memory and re-render. Does not sync anywhere. */
+  patch(fn: (a: Account) => void) { const a = acct(); if (a) { fn(a); notify(); } },
   onEmit(fn: (a: Account | null) => void) { emitHooks.add(fn); },
   seedAccount(email: string, creator: Partial<Creator>): Account {
     const a = Object.values(seedState().accounts)[0];
