@@ -13,6 +13,8 @@ const RECEIPTS_READY = !isUnbuilt('receipts');
 export interface Expense { id: string; date: string; amount: number; category: string; note: string; dealId: string | null; receipt: string | null; taxDeductible: boolean }
 
 const KEY = 'asx-expenses-v1', LASTCAT = 'asx-last-category';
+// TODO: this todayISO is UTC, so between 00:00 and 05:30 IST it returns yesterday. When the expenses table is built,
+// use the shared Asia/Kolkata todayISO from src/lib/format.ts instead.
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 export const CATEGORIES = [

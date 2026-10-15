@@ -31,6 +31,7 @@ export const firstName = (s?: string) => (s || 'The brand').split(' ')[0];
 export const initials = (s: string) => s.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
 /** Today's date in India (YYYY-MM-DD), not UTC: between 00:00 and 05:30 IST the UTC date is still yesterday. */
 const IST_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
-export const todayISO = () => IST_DATE.format(new Date());
+export const istDate = (t: Date | string | number) => IST_DATE.format(new Date(t));
+export const todayISO = () => istDate(Date.now());
 export const daysFrom = (iso: string) => Math.round((Date.parse(iso) - Date.parse(todayISO())) / DAY);
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');

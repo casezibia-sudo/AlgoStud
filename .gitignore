@@ -5,3 +5,6 @@ dist
 .env
 supabase/.temp
 supabase/.branches
+
+# local backups and the design-comparison harness (never commit)
+scratchpad/

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { effStage, nextStep, STAGE, TRACK, useAccount, type Deal } from '@/api';
@@ -18,7 +18,10 @@ export default function Deals() {
   const [params, setParams] = useSearchParams();
   const tab = (params.get('tab') as 'open' | 'done') || 'open';
   const stage = params.get('stage');
-  const [q, setQ] = useState('');
+  // The header search sends people here as /app/deals?q=...
+  const urlQ = params.get('q') || '';
+  const [q, setQ] = useState(urlQ);
+  useEffect(() => { setQ(urlQ); }, [urlQ]);
   const { run, sheets } = useDealAction();
   const set = (k: string, v: string | null) => { const p = new URLSearchParams(params); v ? p.set(k, v) : p.delete(k); setParams(p, { replace: true }); };
 
