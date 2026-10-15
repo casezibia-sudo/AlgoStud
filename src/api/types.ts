@@ -83,6 +83,8 @@ export interface Deal {
   advancePercent?: number;
   /** The brand message pasted when the deal was created. Local demo only: Supabase deals don't load it. */
   sourceMessage?: string;
+  /** Campaign name (Supabase deals only), e.g. "Café menu launch". */
+  title?: string;
   /** Supabase-backed deals only: the stage exactly as stored. */
   dbStage?: DbStage;
 }

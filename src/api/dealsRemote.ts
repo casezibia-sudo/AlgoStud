@@ -77,7 +77,7 @@ function dueText(t: Pick<TermsRow, 'payment_trigger' | 'payment_due_days' | 'dat
 function toDeal(r: DealRow, t: TermsRow, received: number): Deal {
   const del = t.deliverables?.text || '';
   const d: Deal = {
-    id: r.id, brand: r.brand_name, contact: r.brand_contact || '', email: r.brand_email || '', del,
+    id: r.id, title: r.title || undefined, brand: r.brand_name, contact: r.brand_contact || '', email: r.brand_email || '', del,
     first: itemNames({ del })[0] || '', n: toRupees(t.amount_paise),
     stage: r.archived_at ? 'archived' : UI_STAGE[r.stage], dbStage: r.stage,
     due: dueText(t), trigger: t.payment_trigger || 'On approval', usage: t.usage_rights || null,
