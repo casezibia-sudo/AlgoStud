@@ -79,7 +79,7 @@ function toDeal(r: DealRow, t: TermsRow, received: number): Deal {
     sentAt: t.sent_at || undefined, confirmedAt: t.confirmed_at || undefined,
     confirmedVersion: t.confirmed_at ? t.version : undefined,
     dueISO: r.payment_due_date || undefined, postedAt: r.posted_at || undefined, paidAt: r.paid_at || undefined,
-    archivedAt: r.archived_at || undefined, received: received || undefined,
+    archivedAt: r.archived_at || undefined, createdAt: r.created_at || undefined, received: received || undefined,
   };
   if (r.stage === 'draft') d.missing = localApi.deals.missing(d);
   return d;

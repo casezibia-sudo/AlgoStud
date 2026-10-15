@@ -72,6 +72,8 @@ export interface Deal {
   lastReminderChannel?: string;
   reminders?: number;
   archivedAt?: string;
+  /** When the deal was created (Supabase deals only). Used for a brand's "Since". */
+  createdAt?: string;
   /** Supabase-backed deals only: the stage exactly as stored. */
   dbStage?: DbStage;
 }

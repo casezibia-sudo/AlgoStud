@@ -1,89 +1,103 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search } from 'lucide-react';
-import { effStage, nextStep, STAGE, TRACK, useAccount, type Deal } from '@/api';
-import { Button, Card, Empty, Input, LinkButton, Segmented } from '@/components/ui';
-import { DealRow, PageHead, useDealAction } from '@/components/deal';
-import { cx, inr } from '@/lib/format';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Plus } from 'lucide-react';
+import { effStage, STAGE, useAccount, type Deal } from '@/api';
+import { LATER } from '@/api/safe';
+import { useDealAction } from '@/components/deal';
+import { BoardView } from '@/components/deals/BoardView';
+import { FilterBar } from '@/components/deals/FilterBar';
+import { ListView, type Group } from '@/components/deals/ListView';
+import { DealsBrandsTabs } from '@/components/deals/Tabs';
+import { Boundary, DataError } from '@/components/overview/shared';
+import { useToast } from '@/components/ui';
+import { useAuth } from '@/lib/auth';
+import { CHIPS, chipOf, dealsHeader, isOpen, rupee, type ChipKey } from '@/lib/dealsView';
 
-export function DealsBrandsTabs({ current }: { current: 'Deals' | 'Brands' }) {
-  const nav = useNavigate();
-  return <Segmented size="sm" label="Deals sections" value={current} onChange={v => nav(v === 'Deals' ? '/app/deals' : '/app/brands')} options={[{ value: 'Deals', label: 'Deals' }, { value: 'Brands', label: 'Brands' }]} />;
-}
-
-const PIPE = TRACK.filter(t => t.key !== 'draft');
+const CHIP_KEYS = new Set<string>(CHIPS.map(c => c.key));
 
 export default function Deals() {
-  const a = useAccount()!;
+  const a = useAccount();
+  const { reload } = useAuth();
+  const toast = useToast();
   const [params, setParams] = useSearchParams();
-  const tab = (params.get('tab') as 'open' | 'done') || 'open';
-  const stage = params.get('stage');
+  const { run, sheets } = useDealAction();
   // The header search sends people here as /app/deals?q=...
   const urlQ = params.get('q') || '';
   const [q, setQ] = useState(urlQ);
   useEffect(() => { setQ(urlQ); }, [urlQ]);
-  const { run, sheets } = useDealAction();
   const set = (k: string, v: string | null) => { const p = new URLSearchParams(params); v ? p.set(k, v) : p.delete(k); setParams(p, { replace: true }); };
 
-  const match = (d: Deal) => (!q || (d.brand + ' ' + d.del + ' ' + d.contact).toLowerCase().includes(q.toLowerCase())) && (!stage || TRACK.find(t => t.key === stage)?.stages.includes(effStage(d)));
-  const groups = useMemo(() => {
-    const turn = (d: Deal) => STAGE[effStage(d)].turn;
-    const G = tab === 'open'
-      ? [{ title: 'Needs you', sub: 'Do these first', rows: a.deals.filter(d => turn(d) === 'you') }, { title: 'Waiting on brand', sub: 'Nothing for you to do yet', rows: a.deals.filter(d => turn(d) === 'brand') }]
-      : [{ title: 'Done', sub: 'Paid and closed', rows: a.deals.filter(d => turn(d) === 'done') }];
-    return G.map(g => ({ ...g, rows: g.rows.filter(match) })).filter(g => g.rows.length);
-  }, [a, tab, q, stage]);
+  const chip = (CHIP_KEYS.has(params.get('stage') || '') ? params.get('stage') : null) as ChipKey | null;
+  const view = params.get('view') === 'board' ? 'board' : 'list';
+  const brandKey = params.get('brand') || '';
+  const later = (what: string) => toast(LATER(what));
 
-  const totals = {
-    open: a.deals.filter(d => STAGE[effStage(d)].turn !== 'done').reduce((s, d) => s + d.n, 0),
-    due: a.deals.filter(d => ['due', 'approved'].includes(d.stage)).reduce((s, d) => s + d.n, 0),
-    paid: a.payments.reduce((s, p) => s + p.amount, 0),
-  };
-  const pipe = PIPE.map(t => { const ds = a.deals.filter(d => t.stages.includes(effStage(d))); return { ...t, count: ds.length, v: ds.reduce((s, d) => s + d.n, 0), late: ds.filter(d => effStage(d) === 'overdue').length }; });
-  const maxV = Math.max(1, ...pipe.map(p => p.v));
+  const live = useMemo(() => (a ? a.deals.filter(d => chipOf(d) !== null) : []), [a]);
+  const brands = useMemo(() => { const m = new Map<string, string>(); live.forEach(d => { const k = String(d.brand ?? '').trim().toLowerCase(); if (k && !m.has(k)) m.set(k, String(d.brand).trim()); }); return [...m].map(([key, name]) => ({ key, name })).sort((x, y) => x.name.localeCompare(y.name)); }, [live]);
+
+  const match = (d: Deal) => (!q || (d.brand + ' ' + d.del + ' ' + d.contact).toLowerCase().includes(q.toLowerCase())) && (!brandKey || String(d.brand ?? '').trim().toLowerCase() === brandKey);
+  const searched = useMemo(() => live.filter(match), [live, q, brandKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const counts = useMemo(() => ({
+    all: searched.filter(isOpen).length,
+    ...Object.fromEntries(CHIPS.map(c => [c.key, searched.filter(d => chipOf(d) === c.key).length])),
+  }) as Record<ChipKey | 'all', number>, [searched]);
+
+  const shown = chip ? searched.filter(d => chipOf(d) === chip) : searched;
+  const groups: Group[] = chip === 'done'
+    ? [{ title: 'Done', sub: 'Paid and closed', rows: shown }]
+    : [
+        { title: 'Needs you', sub: 'Your move', rows: shown.filter(d => isOpen(d) && STAGE[effStage(d)].turn === 'you') },
+        { title: 'Waiting on brand', sub: "Brand's move", rows: shown.filter(d => isOpen(d) && STAGE[effStage(d)].turn === 'brand') },
+        // Searching or filtering by brand should also find paid deals, which the plain list keeps under the Done chip.
+        ...(q || brandKey ? [{ title: 'Done', sub: 'Paid and closed', rows: shown.filter(d => chipOf(d) === 'done') }] : []),
+      ];
+  const filtering = !!(q || chip || brandKey);
+
+  const head = a ? dealsHeader(a) : null;
+  const sub = !head ? '' : head.needN || head.lateN
+    ? [head.lateN ? `${head.lateN} payment${head.lateN === 1 ? '' : 's'} late` : '', head.needN ? `${head.needN} deal${head.needN === 1 ? '' : 's'} need you` : ''].filter(Boolean).join(', ')
+    : 'Nothing needs you right now';
 
   return (
     <>
-      <PageHead above={<div className="mb-2"><DealsBrandsTabs current="Deals" /></div>} title="Deals" sub={`${a.deals.length} deals`} actions={<LinkButton to="/app/deals/new">New deal</LinkButton>} />
-
-      <Card label="Pipeline by stage" className="bg-[#FAFAFA]! p-4 lg:px-5 lg:pb-5 flex flex-col gap-3.5">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-          <div className="flex flex-wrap items-baseline gap-2.5"><h2 className="m-0 text-base font-semibold">Pipeline</h2><span className="text-xs font-medium text-muted">Select a stage to filter the list</span></div>
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs font-medium text-muted">
-            <span>Open <b className="ml-1 text-base text-ink tabular-nums">{inr(totals.open)}</b></span>
-            <span>Owed <b className="ml-1 text-base text-ink tabular-nums">{inr(totals.due)}</b></span>
-            <span>Received <b className="ml-1 text-base text-brand-ink tabular-nums">{inr(totals.paid)}</b></span>
-          </div>
-        </div>
-        <div role="group" aria-label="Deal stages" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-          {pipe.map(p => {
-            const on = stage === p.key;
-            return (
-              <button key={p.key} type="button" aria-pressed={on} onClick={() => set('stage', on ? null : p.key)}
-                className={cx('flex flex-col gap-2 rounded-xl p-3 text-left transition-[background,box-shadow,transform] active:scale-[.98] cursor-pointer hover:bg-white', on ? 'bg-white shadow-[inset_0_0_0_1.5px_var(--color-brand)]' : 'bg-[#F1F2F2]')}>
-                <span className="flex flex-wrap items-baseline justify-between gap-x-2"><span className="text-[13px] font-semibold">{p.label}</span><span className="text-xs font-medium text-muted">{p.count} deal{p.count === 1 ? '' : 's'}</span></span>
-                <span className="text-lg font-semibold tabular-nums tracking-[-0.01em]">{inr(p.v)}</span>
-                <span aria-hidden className="h-1 rounded-full bg-[#E4E5E6] overflow-hidden"><span className="block h-full rounded-full bg-brand" style={{ width: `${(p.v / maxV) * 100}%` }} /></span>
-                <span className={cx('text-xs', p.late ? 'font-semibold text-danger' : 'font-medium text-muted')}>{p.late ? `${p.late} overdue` : p.count ? 'On track' : 'None'}</span>
-              </button>
-            );
-          })}
-        </div>
-      </Card>
-
-      <Card className="mt-4 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 lg:px-6">
-          <Segmented label="Deal status" value={tab} onChange={v => set('tab', v === 'open' ? null : v)} options={[{ value: 'open', label: 'Open' }, { value: 'done', label: 'Done' }]} />
-          <label className="relative w-full sm:w-72"><span className="sr-only">Search deals</span><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><Input className="pl-9 h-10" placeholder="Search brand or deliverable" value={q} onChange={e => setQ(e.target.value)} /></label>
-        </div>
-        {groups.length === 0 ? <Empty title="No deals here" body={stage || q ? 'Try clearing the filter or search.' : 'Paste a brand message to create your first deal.'} action={stage || q ? <Button onClick={() => { setQ(''); set('stage', null); }}>Clear filters</Button> : <LinkButton variant="primary" to="/app/deals/new">Create deal</LinkButton>} /> :
-          groups.map(g => (
-            <div key={g.title}>
-              <div className="flex items-baseline gap-2 border-t border-line bg-[#F4F5F5] px-4 pt-3.5 pb-1.5 lg:px-6"><span className="text-[13px] font-semibold">{g.title}</span><span className="text-xs font-semibold text-muted">{g.rows.length}</span><span className="text-xs font-medium text-muted">· {g.sub}</span></div>
-              <div className="divide-y divide-line">{g.rows.map(d => <DealRow key={d.id} d={d} action={g.title === 'Needs you' && nextStep(d) ? <Button size="sm" onClick={() => run(d)}>{nextStep(d)!.label.replace(/ to .*$/, '').replace(/ for .*$/, '')}</Button> : undefined} />)}</div>
+      <div className="pt-3"><DealsBrandsTabs current="Deals" /></div>
+      {!a || !head ? <div className="pt-6"><DataError onRetry={reload} /></div> : (
+        <>
+          <Boundary title="Deals">
+            <div className="flex flex-wrap items-start justify-between gap-4 pb-5 pt-2">
+              <div className="flex flex-col gap-1">
+                <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+                  <h1 className="m-0 mr-1 text-[32px] font-semibold leading-10 tracking-[-0.02em]">Deals</h1>
+                  <span className="text-[13px] font-medium text-ink-2">Open <b className="ml-1 text-base font-semibold tabular-nums">{rupee(head.open)}</b></span>
+                  <span className="text-[13px] font-medium text-ink-2">Overdue <b className="ml-1 text-base font-semibold tabular-nums text-danger">{rupee(head.overdue)}</b></span>
+                  <span className="text-[13px] font-medium text-ink-2">Received in {head.monthLabel} <b className="ml-1 text-base font-semibold tabular-nums text-brand-ink">{rupee(head.received)}</b></span>
+                </div>
+                <p className="m-0 text-sm font-medium text-[#3A3A40]">{sub}</p>
+              </div>
+              <Link to="/app/deals/new" className="mt-2 inline-flex h-[38px] items-center gap-2 rounded-[10px] bg-white px-4 text-sm font-medium text-ink shadow-[0_0_0_1px_rgba(0,0,0,.1),0_1px_2px_rgba(0,0,0,.04)] hover:bg-subtle hover:text-ink"><Plus size={15} aria-hidden="true" />New deal</Link>
             </div>
-          ))}
-      </Card>
+          </Boundary>
+          <Boundary title="Filters">
+            <FilterBar chip={chip} counts={counts} onChip={c => set('stage', c)} q={q} onQ={setQ} brand={brandKey} brands={brands} onBrand={v => set('brand', v || null)} view={view} onView={v => set('view', v === 'board' ? 'board' : null)} />
+          </Boundary>
+          <div className="pb-8 pt-4">
+            <Boundary title="Deals">
+              {view === 'board' ? <BoardView deals={shown} onRun={run} onLater={later} /> : (
+                <section aria-label="Deals list" className="min-w-0 rounded-[18px] bg-[#FAFAFA] p-2 shadow-[0_0_0_1px_rgba(0,0,0,.05),0_1px_3px_rgba(0,0,0,.04)]">
+                  {groups.every(g => g.rows.length === 0) ? (
+                    <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
+                      <span className="text-base font-semibold">{filtering ? 'No deals match' : 'No deals yet'}</span>
+                      <span className="max-w-sm text-sm font-medium text-muted">{filtering ? 'Try clearing the search or filters.' : 'Create a deal and it will show up here.'}</span>
+                      {filtering ? <button type="button" onClick={() => { setQ(''); setParams(new URLSearchParams(), { replace: true }); }} className="mt-1 h-9 cursor-pointer rounded-[10px] bg-white px-4 text-sm font-medium shadow-[0_0_0_1px_rgba(0,0,0,.12)]">Clear filters</button>
+                        : <Link to="/app/deals/new" className="mt-1 inline-flex h-9 items-center rounded-[10px] bg-brand px-4 text-sm font-medium text-white hover:bg-brand-hover hover:text-white">New deal</Link>}
+                    </div>
+                  ) : <ListView groups={groups.filter(g => g.rows.length)} onRun={run} onLater={later} />}
+                </section>
+              )}
+            </Boundary>
+          </div>
+        </>
+      )}
       {sheets}
     </>
   );

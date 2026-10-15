@@ -1,65 +1,63 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { effStage, STAGE, useAccount } from '@/api';
-import { Avatar, Card, Pill } from '@/components/ui';
-import { PageHead, StagePill } from '@/components/deal';
-import { DealsBrandsTabs } from './Deals';
-import { cx, DAY, inr } from '@/lib/format';
+import { Plus } from 'lucide-react';
+import { useAccount } from '@/api';
+import { BrandCard } from '@/components/brands/BrandCard';
+import { BrandHero } from '@/components/brands/BrandHero';
+import { DealsBrandsTabs } from '@/components/deals/Tabs';
+import { Boundary, DataError, CARD } from '@/components/overview/shared';
+import { useAuth } from '@/lib/auth';
+import { brandStats } from '@/lib/brandStats';
+import { cx } from '@/lib/format';
+
+type Filter = 'all' | 'repeat' | 'new';
 
 export default function Brands() {
-  const a = useAccount()!;
-  const brands = useMemo(() => {
-    const m = new Map<string, { brand: string; contact: string; deals: typeof a.deals; earned: number; open: number; days: number[] }>();
-    a.deals.forEach(d => {
-      const b = m.get(d.brand) || { brand: d.brand, contact: d.contact, deals: [], earned: 0, open: 0, days: [] };
-      b.deals.push(d);
-      if (STAGE[effStage(d)].turn !== 'done') b.open += d.n;
-      a.payments.filter(p => p.dealId === d.id).forEach(p => { b.earned += p.amount; if (d.approvedAt) b.days.push(Math.round((Date.parse(p.date) - Date.parse(d.approvedAt)) / DAY)); });
-      m.set(d.brand, b);
-    });
-    return [...m.values()].sort((x, y) => y.earned + y.open - (x.earned + x.open));
-  }, [a]);
-  const [sel, setSel] = useState(brands[0]?.brand);
-  const b = brands.find(x => x.brand === sel) || brands[0];
-  const avg = (b?.days.length ? Math.round(b.days.reduce((s, x) => s + x, 0) / b.days.length) : null);
+  const a = useAccount();
+  const { reload } = useAuth();
+  const all = useMemo(() => (a ? brandStats(a) : []), [a]);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [sel, setSel] = useState('');
+
+  const counts = { all: all.length, repeat: all.filter(b => b.count >= 2).length, new: all.filter(b => b.count === 1).length };
+  const shown = all.filter(b => filter === 'all' || (filter === 'repeat' ? b.count >= 2 : b.count === 1));
+  const current = all.find(b => b.key === sel) || shown[0] || all[0];
 
   return (
     <>
-      <PageHead above={<div className="mb-2"><DealsBrandsTabs current="Brands" /></div>} title="Brands" sub={`${brands.length} brands you've worked with`} />
-      {b && (
-        <section aria-label={b.brand} className="rounded-[var(--radius-card)] bg-deep p-5 lg:px-6 lg:py-5 text-white flex flex-wrap items-center gap-6">
-          <div className="flex items-center gap-3"><Avatar name={b.brand} size={48} dark /><div className="flex flex-col"><span className="font-display text-[28px] lg:text-[34px] leading-none font-medium tracking-[-0.02em]">{b.brand}</span><span className="text-[13px] font-medium text-mint-soft">{b.contact} · {b.deals.length} deal{b.deals.length === 1 ? '' : 's'}</span></div></div>
-          <div className="ml-auto grid grid-cols-3 gap-2 min-w-[280px] flex-1 lg:flex-none lg:w-[480px]">
-            {[['Earned', inr(b.earned)], ['Open', inr(b.open)], ['Pays in', avg === null ? '—' : `${avg} days`]].map(([k, v]) => (
-              <div key={k} className="flex flex-col gap-1 rounded-xl bg-deep-2 px-3.5 py-2.5"><span className="text-[11px] font-semibold uppercase tracking-[.05em] text-[#9FD8C0]">{k}</span><span className="text-xl font-semibold tabular-nums whitespace-nowrap">{v}</span></div>
-            ))}
-          </div>
-        </section>
-      )}
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] items-start">
-        <Card className="overflow-hidden">
-          <div role="listbox" aria-label="Brands" className="divide-y divide-line">
-            {brands.map(x => (
-              <button key={x.brand} type="button" role="option" aria-selected={x.brand === b?.brand} onClick={() => setSel(x.brand)} className={cx('flex w-full items-center gap-3 px-4 py-3 text-left lg:px-6 cursor-pointer', x.brand === b?.brand ? 'bg-brand-tint' : 'hover:bg-subtle')}>
-                <Avatar name={x.brand} size={32} /><span className="flex-1 text-sm font-semibold">{x.brand}</span><span className="text-[13px] font-semibold tabular-nums text-muted">{inr(x.earned)}</span>
-              </button>
-            ))}
-          </div>
-        </Card>
-        {b && (
-          <Card className="overflow-hidden">
-            <div className="px-4 pt-5 pb-2 lg:px-6"><h2 className="m-0 text-base font-semibold">Deals with {b.brand}</h2></div>
-            <div className="divide-y divide-line">
-              {b.deals.map(d => (
-                <Link key={d.id} to={`/app/deals/${d.id}`} className="flex items-center gap-3 px-4 py-3.5 lg:px-6 text-ink hover:text-ink hover:bg-subtle">
-                  <span className="flex min-w-0 flex-1 flex-col gap-1"><span className="text-sm font-semibold">{d.del}</span><span className="flex gap-2"><StagePill d={d} />{d.version && d.version > 1 && <Pill>v{d.version}</Pill>}</span></span>
-                  <span className="text-sm font-semibold tabular-nums">{inr(d.n)}</span>
-                </Link>
+      <div className="pt-5"><DealsBrandsTabs current="Brands" /></div>
+      {!a ? <div className="pt-6"><DataError onRetry={reload} /></div> : (
+        <>
+          <div className="flex flex-wrap items-start justify-between gap-4 pb-4 pt-[13px]">
+            <div className="flex flex-col gap-1">
+              <h1 className="m-0 text-[30px] font-semibold leading-10 tracking-[-0.02em]">Brands</h1>
+              <p className="m-0 text-sm font-medium text-[#3A3A40]">Everyone you've worked with, and how they work with you.</p>
+            </div>
+            <div role="group" aria-label="Brand filter" className="inline-flex rounded-xl bg-[#E6E7E7] p-[3px]">
+              {([['all', 'All'], ['repeat', 'Repeat'], ['new', 'New']] as const).map(([k, label]) => (
+                <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}
+                  className={cx('inline-flex h-[30px] cursor-pointer items-center gap-1.5 rounded-[9px] px-3 text-sm', filter === k ? 'bg-white font-semibold shadow-[0_1px_2px_rgba(0,0,0,.08)]' : 'font-medium text-ink-2')}>{label}<span className="text-muted tabular-nums">{counts[k]}</span></button>
               ))}
             </div>
-          </Card>
-        )}
-      </div>
+          </div>
+          {all.length === 0 ? (
+            <section className={`${CARD} flex flex-col items-center gap-2 py-14 text-center`}>
+              <span className="text-base font-semibold">No brands yet</span>
+              <span className="max-w-sm text-sm font-medium text-muted">Brands appear here once you create a deal. You'll see how many deals you've done with each, what they paid, and how quickly.</span>
+              <Link to="/app/deals/new" className="mt-1 inline-flex h-9 items-center gap-2 rounded-[10px] bg-brand px-4 text-sm font-medium text-white hover:bg-brand-hover hover:text-white"><Plus size={15} aria-hidden="true" />New deal</Link>
+            </section>
+          ) : (
+            <div className="flex flex-col gap-[18px] pb-8">
+              <Boundary title="Brand"><BrandHero brand={current} brands={all} onSelect={setSel} /></Boundary>
+              <Boundary title="Brands">
+                {shown.length === 0
+                  ? <p className={`${CARD} m-0 text-center text-sm font-medium text-muted`}>No {filter === 'new' ? 'new' : 'repeat'} brands yet.</p>
+                  : <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">{shown.map(b => <BrandCard key={b.key} brand={b} selected={b.key === current.key} onSelect={() => setSel(b.key)} />)}</div>}
+              </Boundary>
+            </div>
+          )}
+        </>
+      )}
     </>
   );
 }

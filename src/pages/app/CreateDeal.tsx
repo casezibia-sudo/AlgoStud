@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ClipboardPaste } from 'lucide-react';
 import { api, isRemote, useAccount, type DealDraft, type Trigger } from '@/api';
 import { Button, Card, Field, Input, Label, Select, Textarea, useToast } from '@/components/ui';
@@ -25,12 +25,13 @@ function parseMessage(t: string): Partial<DealDraft> {
 
 export default function CreateDeal() {
   const { id } = useParams();
+  const [sp] = useSearchParams(); // /app/deals/new?brand=...&contact=...&email=... pre-fills the brand (used by Brands)
   const a = useAccount()!;
   const nav = useNavigate();
   const toast = useToast();
   const existing = id ? a.deals.find(d => d.id === id) : undefined;
   const versionMode = !!existing && existing.stage !== 'draft';
-  const [f, setF] = useState<DealDraft>(() => existing ? { brand: existing.brand, contact: existing.contact, email: existing.email, del: existing.del, n: existing.n, due: existing.due || '', trigger: existing.trigger, usage: existing.usage || '', rev: existing.rev, notes: existing.notes || '' } : { ...EMPTY, trigger: a.creator.defaultTrigger || 'On approval' });
+  const [f, setF] = useState<DealDraft>(() => existing ? { brand: existing.brand, contact: existing.contact, email: existing.email, del: existing.del, n: existing.n, due: existing.due || '', trigger: existing.trigger, usage: existing.usage || '', rev: existing.rev, notes: existing.notes || '' } : { ...EMPTY, trigger: a.creator.defaultTrigger || 'On approval', brand: sp.get('brand') || '', contact: sp.get('contact') || '', email: sp.get('email') || '' });
   const [tpl, setTpl] = useState<string | null>(null);
   const [paste, setPaste] = useState('');
   const [showErr, setShowErr] = useState(false);

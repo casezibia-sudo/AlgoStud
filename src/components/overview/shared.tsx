@@ -24,7 +24,7 @@ export class Boundary extends Component<{ title: string; className?: string; chi
     return (
       <section role="alert" className={`${CARD} flex flex-col items-start gap-2 ${this.props.className || ''}`}>
         <h2 className="m-0 text-base font-semibold">{this.props.title}</h2>
-        <p className="m-0 text-[13px] font-medium text-muted">This card couldn't be shown. The rest of your overview is fine.</p>
+        <p className="m-0 text-[13px] font-medium text-muted">This part couldn't be shown. The rest of this page is fine.</p>
         <Button size="sm" onClick={() => this.setState({ failed: false })}>Try again</Button>
       </section>
     );
