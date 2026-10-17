@@ -5,7 +5,7 @@
 // diffed and written to the document tables. Brand-side calls go to the `brand` edge function.
 import { localApi, localInternals } from './local';
 import { sb, remoteEnabled } from './supabase';
-import { applyDealData, headerArgs, loadDealData, rpc, templateTerms, termsArgs } from './dealsRemote';
+import { applyDealData, headerArgs, loadDealData, loadSavedDraft, loadTemplateTerms, mergeDraft, rpc, templateEdits, templateTerms, termsArgs } from './dealsRemote';
 import { isUnbuilt, LATER, warnOnce } from './safe';
 import type { Account, Answer, AnswerInput, BrandLinkView, Creator, DbStage, Deal, DealDraft, Submission, Template, WorkAnswerInput } from './types';
 
@@ -122,16 +122,15 @@ const dealOf = (id: string): Deal => {
   if (!d) throw new Error('Not found');
   return d;
 };
-/** The form fields for a deal, as the UI shows them. */
-const draftOf = (d: Deal): DealDraft => ({
-  brand: d.brand, contact: d.contact, email: d.email, del: d.del, n: d.n, due: d.due, trigger: d.trigger,
-  usage: d.usage, rev: d.rev, notes: d.notes, src: d.src,
-  // update_draft_terms overwrites these, so they must travel with every save or an edit would clear them.
-  firstDraftDate: d.firstDraftDate, finalDeliveryDate: d.finalDeliveryDate,
-  paymentStructure: d.paymentStructure, advancePercent: d.advancePercent,
-});
-const saveDraft = (id: string, f: DealDraft) =>
-  rpc('update_draft_terms', { p_deal_id: id, ...headerArgs(f), p_terms: termsArgs(f) });
+/**
+ * update_draft_terms overwrites every term column, so each save sends the COMPLETE terms: what the database holds
+ * right now, with only the edited fields laid on top. Untouched fields can never be blanked.
+ */
+const saveDraft = async (id: string, edits: Partial<DealDraft>) => {
+  const { draft, extra } = await loadSavedDraft(id);
+  const f = mergeDraft(draft, edits);
+  return rpc('update_draft_terms', { p_deal_id: id, ...headerArgs(f), p_terms: { ...termsArgs(f), ...extra } });
+};
 
 export const remoteApi = {
   ...localApi,
@@ -144,7 +143,7 @@ export const remoteApi = {
     async update(id: string, fields: Partial<DealDraft>) {
       const d = dealOf(id);
       if (d.dbStage !== 'draft') throw new Error('Only drafts can be edited directly. Send a new version instead.');
-      await write(() => saveDraft(id, { ...draftOf(d), ...fields }));
+      await write(() => saveDraft(id, fields));
     },
     /** Soft delete: the row stays, with its audit history. */
     async remove(id: string) { await write(() => rpc('delete_deal', { p_deal_id: id })); },
@@ -159,7 +158,7 @@ export const remoteApi = {
       const d = dealOf(dealId);
       await write(async () => {
         if (d.dbStage !== 'draft') await rpc('revise_terms', { p_deal_id: dealId });
-        await saveDraft(dealId, { ...draftOf(d), ...fields });
+        await saveDraft(dealId, fields);
         await rpc('send_terms', { p_deal_id: dealId, p_channel: channel });
       });
       return '';
@@ -179,8 +178,11 @@ export const remoteApi = {
     async update(id: string, p: Partial<Template>) {
       const t = localApi.snapshot().account?.templates.find(x => x.id === id);
       if (!t) throw new Error('Not found');
-      const m = { ...t, ...p };
-      await write(() => rpc('update_template', { p_id: id, p_name: m.name, p_terms: templateTerms(m) }));
+      // update_template replaces the whole terms JSON. Send what is stored, with only the fields that really changed on top,
+      // so payment days / structure / advance % (which this form can't edit) and an unset trigger survive an edit.
+      const changed = Object.fromEntries(Object.entries(p).filter(([k, v]) => v !== (t as unknown as Record<string, unknown>)[k])) as Partial<Template>;
+      const saved = await loadTemplateTerms(id);
+      await write(() => rpc('update_template', { p_id: id, p_name: p.name ?? t.name, p_terms: { ...saved, ...templateEdits(changed) } }));
     },
     async remove(id: string) { await write(() => rpc('delete_template', { p_id: id })); },
     async use(id: string) { await write(() => rpc('use_template', { p_id: id })); },

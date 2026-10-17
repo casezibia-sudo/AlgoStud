@@ -48,6 +48,23 @@ export function parseAmount(text: string): Amount {
 
 const wholeNumber = (s: string, min: number, max: number) => (/^\d+$/.test(s.trim()) && +s >= min && +s <= max ? +s : null);
 
+/** Both dates are ISO (yyyy-mm-dd), so a string compare is a date compare. */
+export const datesOutOfOrder = (first: string, final: string) => !!first && !!final && final < first;
+
+/** Problems with the four extra terms on the Edit page. These match the database constraints, so they are caught before saving. */
+export function extraTermProblems(x: { firstDraftDate: string; finalDeliveryDate: string; paymentStructure: string; advancePercent: string }) {
+  const out: { finalDeliveryDate?: string; advancePercent?: string } = {};
+  if (datesOutOfOrder(x.firstDraftDate, x.finalDeliveryDate)) out.finalDeliveryDate = "Final delivery can't be before the first draft.";
+  if (x.paymentStructure === 'advance_balance' && wholeNumber(x.advancePercent, 1, 99) === null) out.advancePercent = 'Enter the advance share, between 1 and 99%.';
+  return out;
+}
+/** Turns a database constraint error into a message a person can act on. Null when it isn't one of ours. */
+export function friendlyTermsError(message: string): { field: 'finalDeliveryDate' | 'advancePercent'; message: string } | null {
+  if (message.includes('deal_terms_dates_order')) return { field: 'finalDeliveryDate', message: "Final delivery can't be before the first draft." };
+  if (message.includes('deal_terms_advance_percent')) return { field: 'advancePercent', message: 'Enter the advance share, between 1 and 99%.' };
+  return null;
+}
+
 export interface Check { filled: Record<TermKey, boolean>; problems: Partial<Record<TermKey, string>>; count: number; missing: string[] }
 /** Which of the nine key terms are filled, and what is wrong with the ones that aren't. */
 export function check(f: FormState): Check {
@@ -69,7 +86,7 @@ export function check(f: FormState): Check {
   set('payment', !payWhy, payWhy);
 
   set('firstDraft', !!f.firstDraft, 'Choose the date of the first draft.');
-  const order = !!f.firstDraft && !!f.finalDelivery && f.finalDelivery < f.firstDraft;
+  const order = datesOutOfOrder(f.firstDraft, f.finalDelivery);
   set('finalDelivery', !!f.finalDelivery && !order, order ? "Final delivery can't be before the first draft." : 'Choose the final delivery date.');
   set('usage', !!f.usage.trim(), 'Say where and for how long the brand can use the content.');
   set('revisions', REVISION_CHOICES.includes(f.revisions as 0 | 1 | 2 | 3), 'Choose the number of revisions.');

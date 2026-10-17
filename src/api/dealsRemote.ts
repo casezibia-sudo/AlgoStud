@@ -15,6 +15,7 @@ interface TermsRow {
   deal_id: string; version: number; status: string; deliverables: { text?: string }; amount_paise: number;
   dates: { fixed_date?: string }; usage_rights: string | null; revisions_included: number; payment_due_days: number | null;
   payment_trigger: Trigger | null; notes: string | null; sent_at: string | null; confirmed_at: string | null; created_at: string;
+  exclusivity?: string | null; whitelisting?: string | null;
   // Added by 20261016000000_deal_form_fields.sql
   first_draft_date: string | null; final_delivery_date: string | null; payment_structure: PaymentStructure | null; advance_percent: number | null;
 }
@@ -68,6 +69,33 @@ export const headerArgs = (f: Partial<DealDraft>) => ({
   p_brand_name: f.brand ?? '', p_brand_email: f.email ?? '', p_brand_contact: f.contact ?? '', p_source: f.src ?? '',
 });
 
+/**
+ * update_draft_terms overwrites every term column, so a save must always carry the COMPLETE terms.
+ * This reads what the database holds for the deal's current draft (never the in-memory snapshot, which may be stale).
+ */
+export async function loadSavedDraft(dealId: string): Promise<{ draft: DealDraft; extra: { exclusivity: string | null; whitelisting: string | null } }> {
+  const dr = need<{ brand_name: string; brand_email: string | null; brand_contact: string | null; source: string | null; current_version: number }>(await sb.from('deals').select('brand_name, brand_email, brand_contact, source, current_version').eq('id', dealId).single());
+  const tr = need(await sb.from('deal_terms').select('*').eq('deal_id', dealId).eq('version', dr.current_version).single()) as TermsRow;
+  return {
+    draft: {
+      brand: dr.brand_name, contact: dr.brand_contact || '', email: dr.brand_email || '', del: tr.deliverables?.text || '',
+      n: toRupees(tr.amount_paise), due: dueText(tr) || '',
+      // Left as stored: a deal with no payment trigger (full advance) must not become 'On approval' on save.
+      trigger: tr.payment_trigger as Trigger,
+      usage: tr.usage_rights, rev: `${tr.revisions_included} included`, notes: tr.notes || '', src: dr.source || '',
+      firstDraftDate: tr.first_draft_date || undefined, finalDeliveryDate: tr.final_delivery_date || undefined,
+      paymentStructure: tr.payment_structure || undefined, advancePercent: tr.advance_percent ?? undefined,
+    },
+    extra: { exclusivity: tr.exclusivity ?? null, whitelisting: tr.whitelisting ?? null },
+  };
+}
+/** Saved terms with the user's edits on top. An edit that is undefined means "not touched"; '' or null clears. */
+export function mergeDraft(saved: DealDraft, edits: Partial<DealDraft>): DealDraft {
+  const out: Record<string, unknown> = { ...saved };
+  for (const [k, v] of Object.entries(edits)) if (v !== undefined) out[k] = v;
+  return out as unknown as DealDraft;
+}
+
 /** What the form shows for "payment due" is computed here from columns; the display string is never stored. */
 function dueText(t: Pick<TermsRow, 'payment_trigger' | 'payment_due_days' | 'dates'>): string | null {
   if (t.payment_trigger === 'Fixed date') return t.dates?.fixed_date ? fmtDate(t.dates.fixed_date) : null;
@@ -117,6 +145,21 @@ const need = <T,>(r: { data: T | null; error: { message: string } | null }): T =
   if (r.error) throw new Error(r.error.message);
   return r.data as T;
 };
+
+/** Only the keys present in `p` become p_terms keys, so they can be laid over the terms already saved. */
+export const templateEdits = (p: Partial<Template>) => ({
+  ...(p.del !== undefined ? { deliverables_text: p.del } : {}),
+  ...(p.usageFull !== undefined ? { usage_rights: p.usageFull } : {}),
+  ...(p.trigger !== undefined ? { payment_trigger: p.trigger } : {}),
+  ...(p.rev !== undefined ? { revisions_included: parseDays(p.rev) ?? 1 } : {}),
+  ...(p.payDays != null ? { payment_due_days: p.payDays } : {}),
+  ...(p.payStructure ? { payment_structure: p.payStructure } : {}),
+  ...(p.advancePct != null ? { advance_percent: p.advancePct } : {}),
+});
+/** The terms JSON stored for a template. update_template replaces it whole, so edits are laid over this. */
+export async function loadTemplateTerms(id: string): Promise<Record<string, unknown>> {
+  return need<{ terms: Record<string, unknown> }>(await sb.from('templates').select('terms').eq('id', id).single()).terms || {};
+}
 
 export async function loadDealData(payments: Account['payments'] = []): Promise<DealData> {
   const [deals, terms, events, templates] = await Promise.all([

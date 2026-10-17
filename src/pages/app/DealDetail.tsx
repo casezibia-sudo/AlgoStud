@@ -6,6 +6,7 @@ import { Button, Card, Label, Pill, Sheet, useToast } from '@/components/ui';
 import { StagePill, SubmitSheet, useDealAction, PaidSheet, RemoteTools, BRAND_LATER } from '@/components/deal';
 import { copy } from '@/components/share';
 import { cx, daysFrom, fmtDate, fmtTime, inr } from '@/lib/format';
+import { STRUCTURES } from '@/lib/dealForm';
 import NotFound from '../NotFound';
 
 export default function DealDetail() {
@@ -32,7 +33,10 @@ export default function DealDetail() {
   const canChangeTerms = !closed && (!isRemote || ['draft', 'sent', 'confirmed'].includes(d.dbStage || ''));
   const terms: [string, string][] = [
     ['Brand', `${d.brand}${d.contact ? ' · ' + d.contact : ''}`], ['Contact email', d.email || '—'], ['Deliverables', d.del || '—'], ['Amount', d.n ? inr(d.n) : '—'],
-    ['Payment', `${d.trigger}${d.due ? ' · ' + d.due : ''}`], ['Usage rights', d.usage || 'Not added'], ['Revisions', d.rev],
+    ['Payment', `${d.trigger}${d.due ? ' · ' + d.due : ''}`],
+    ['Structure', d.paymentStructure ? `${STRUCTURES.find(x => x.value === d.paymentStructure)?.label || d.paymentStructure}${d.paymentStructure === 'advance_balance' && d.advancePercent ? ` · ${d.advancePercent}% advance` : ''}` : 'Not set'],
+    ['First draft', d.firstDraftDate ? fmtDate(d.firstDraftDate + 'T00:00:00') : 'Not set'], ['Final delivery', d.finalDeliveryDate ? fmtDate(d.finalDeliveryDate + 'T00:00:00') : 'Not set'],
+    ['Usage rights', d.usage || 'Not added'], ['Revisions', d.rev],
   ];
 
   return (

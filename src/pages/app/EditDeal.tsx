@@ -1,17 +1,46 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ClipboardPaste } from 'lucide-react';
-import { api, isRemote, useAccount, type DealDraft, type Trigger } from '@/api';
+import { api, isRemote, useAccount, type Deal, type DealDraft, type PaymentStructure, type Trigger } from '@/api';
 import { Button, Card, Field, Input, Label, Select, Textarea, useToast } from '@/components/ui';
 import { SendSheet } from '@/components/share';
 import { cx, firstName, inr } from '@/lib/format';
+import { extraTermProblems, friendlyTermsError, STRUCTURES } from '@/lib/dealForm';
 
-const EMPTY: DealDraft = { brand: '', contact: '', email: '', del: '', n: 0, due: '', trigger: 'On approval', usage: '', rev: '2 included', notes: '' };
+/** The four extra terms are edited as text (dates and the percent as typed); toDraft/editsOf convert them back. */
+type Extra = { firstDraftDate: string; finalDeliveryDate: string; paymentStructure: PaymentStructure | ''; advancePercent: string };
+type Form = Omit<DealDraft, keyof Extra> & Extra;
+const EMPTY: Form = { brand: '', contact: '', email: '', del: '', n: 0, due: '', trigger: 'On approval', usage: '', rev: '2 included', notes: '', firstDraftDate: '', finalDeliveryDate: '', paymentStructure: '', advancePercent: '' };
+const formOf = (d: Deal): Form => ({
+  brand: d.brand, contact: d.contact, email: d.email, del: d.del, n: d.n, due: d.due || '', trigger: d.trigger, usage: d.usage || '', rev: d.rev, notes: d.notes || '',
+  firstDraftDate: d.firstDraftDate || '', finalDeliveryDate: d.finalDeliveryDate || '', paymentStructure: d.paymentStructure || '',
+  advancePercent: d.advancePercent != null ? String(d.advancePercent) : '',
+});
+const pctOf = (s: string) => (/^\d+$/.test(s.trim()) ? +s : undefined);
+/** A whole new deal: every field is sent. */
+const toDraft = (f: Form): DealDraft => ({
+  ...f, firstDraftDate: f.firstDraftDate || undefined, finalDeliveryDate: f.finalDeliveryDate || undefined,
+  paymentStructure: f.paymentStructure || undefined, advancePercent: f.paymentStructure === 'advance_balance' ? pctOf(f.advancePercent) : undefined,
+});
+/**
+ * An existing deal: only what the person actually changed. The API layer lays these over the terms already saved, so a
+ * field that was not touched here can never be blanked. A cleared date or structure is sent as '' (which clears it).
+ */
+function editsOf(f: Form, init: Form): Partial<DealDraft> {
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(f) as (keyof Form)[]) {
+    if (String(f[k] ?? '') === String(init[k] ?? '')) continue;
+    out[k] = k === 'advancePercent' ? pctOf(f.advancePercent) : f[k];
+  }
+  // Switching to or from "Advance + balance" changes what the percent means, so send both together.
+  if ('paymentStructure' in out) out.advancePercent = f.paymentStructure === 'advance_balance' ? pctOf(f.advancePercent) : undefined;
+  return out as Partial<DealDraft>;
+}
 const TRIGGERS: Trigger[] = ['On approval', 'On posting', 'Days after posting', 'Fixed date'];
 
 /** Client-side helper for "Paste a message". The real parser can move server-side later. */
-function parseMessage(t: string): Partial<DealDraft> {
-  const out: Partial<DealDraft> = {};
+function parseMessage(t: string): Partial<Pick<DealDraft, 'n' | 'del' | 'email'>> {
+  const out: Partial<Pick<DealDraft, 'n' | 'del' | 'email'>> = {};
   const amt = t.match(/(?:₹|rs\.?|inr)\s*([\d,]+)|(\d+(?:\.\d+)?)\s*k\b/i);
   if (amt) out.n = amt[1] ? +amt[1].replace(/,/g, '') : Math.round(+amt[2] * 1000);
   const parts: string[] = [];
@@ -31,13 +60,32 @@ export default function EditDeal() {
   const toast = useToast();
   const existing = id ? a.deals.find(d => d.id === id) : undefined;
   const versionMode = !!existing && existing.stage !== 'draft';
-  const [f, setF] = useState<DealDraft>(() => existing ? { brand: existing.brand, contact: existing.contact, email: existing.email, del: existing.del, n: existing.n, due: existing.due || '', trigger: existing.trigger, usage: existing.usage || '', rev: existing.rev, notes: existing.notes || '' } : { ...EMPTY, trigger: a.creator.defaultTrigger || 'On approval', brand: sp.get('brand') || '', contact: sp.get('contact') || '', email: sp.get('email') || '' });
+  // What the form started with, frozen: edits are measured against it, even after a refresh changes `existing`.
+  const [init] = useState<Form>(() => existing ? formOf(existing) : { ...EMPTY, trigger: a.creator.defaultTrigger || 'On approval', brand: sp.get('brand') || '', contact: sp.get('contact') || '', email: sp.get('email') || '' });
+  const [f, setF] = useState<Form>(init);
+  const [serverErr, setServerErr] = useState<{ finalDeliveryDate?: string; advancePercent?: string; form?: string }>({});
   const [tpl, setTpl] = useState<string | null>(null);
   const [paste, setPaste] = useState('');
   const [showErr, setShowErr] = useState(false);
   const [sending, setSending] = useState<string | null>(null);
-  const set = <K extends keyof DealDraft>(k: K, v: DealDraft[K]) => setF(s => ({ ...s, [k]: v }));
-  const missing = api.deals.missing(f);
+  const [tried, setTried] = useState(false);
+  const set = <K extends keyof Form>(k: K, v: Form[K]) => {
+    setF(s => ({ ...s, [k]: v }));
+    setServerErr(e => ({ ...e, form: undefined, ...(k === 'advancePercent' || k === 'paymentStructure' ? { advancePercent: undefined } : {}), ...(k === 'finalDeliveryDate' || k === 'firstDraftDate' ? { finalDeliveryDate: undefined } : {}) }));
+  };
+  const probs = extraTermProblems(f);
+  const dateErr = probs.finalDeliveryDate ?? serverErr.finalDeliveryDate;
+  const pctErr = (tried ? probs.advancePercent : undefined) ?? serverErr.advancePercent;
+  const formErr = serverErr.form || (dateErr || pctErr ? 'Fix the highlighted fields to save.' : '');
+  /** Stops a save the database would reject, so the typed values stay and the message sits next to the field. */
+  const blocked = () => { setTried(true); return Object.keys(probs).length > 0; };
+  const fail = (e: unknown) => {
+    const m = (e as Error).message || 'Something went wrong.';
+    const friendly = friendlyTermsError(m);
+    setServerErr(friendly ? { [friendly.field]: friendly.message } : { form: m });
+    toast(friendly ? friendly.message : m);
+  };
+  const missing = api.deals.missing(toDraft(f));
   const changed = useMemo(() => existing ? (Object.keys(f) as (keyof DealDraft)[]).filter(k => k !== 'notes' && String(f[k] ?? '') !== String(existing[k as keyof typeof existing] ?? '')) : [], [f, existing]);
 
   const applyTemplate = (tid: string) => {
@@ -46,19 +94,21 @@ export default function EditDeal() {
     api.templates.use(tid); toast(`Filled from “${t.name}”`);
   };
   const saveDraft = async () => {
+    if (blocked()) return;
     try {
-      if (existing && !versionMode) { await api.deals.update(existing.id, f); toast('Draft saved.'); return nav(`/app/deals/${existing.id}`); }
-      const nid = await api.deals.create(f); toast('Draft saved.'); nav(`/app/deals/${nid}`);
-    } catch (e) { toast((e as Error).message); }
+      if (existing && !versionMode) { await api.deals.update(existing.id, editsOf(f, init)); toast('Draft saved.'); return nav(`/app/deals/${existing.id}`); }
+      const nid = await api.deals.create(toDraft(f)); toast('Draft saved.'); nav(`/app/deals/${nid}`);
+    } catch (e) { fail(e); }
   };
   const trySend = async () => {
+    if (blocked()) return;
     if (missing.length) return setShowErr(true);
     if (versionMode) return setSending(isRemote ? 'remote' : api.deals.prepareToken());
     try {
       let did = existing?.id;
-      if (did) await api.deals.update(did, f); else did = await api.deals.create(f);
+      if (did) await api.deals.update(did, editsOf(f, init)); else did = await api.deals.create(toDraft(f));
       nav(`/app/deals/${did}`);
-    } catch (e) { toast((e as Error).message); }
+    } catch (e) { fail(e); }
   };
   const err = (k: string) => (showErr && missing.includes(k) ? 'Needed to send' : undefined);
   const v = (existing?.version || 1) + 1;
@@ -102,11 +152,16 @@ export default function EditDeal() {
         <Field label={f.trigger === 'Fixed date' ? 'Due date' : 'Days to pay'} hint={f.trigger === 'Fixed date' ? 'For example: 15 Nov 2026' : 'For example: 15 days'} error={err('payment due date')}>{id => <Input id={id} value={f.due || ''} onChange={e => set('due', e.target.value)} className={cx(changed.includes('due') && 'bg-warn-tint')} />}</Field>
         <div className="sm:col-span-2"><Field label="Usage rights" hint="Where the brand can reuse your content, and for how long." error={err('usage rights')}>{id => <Input id={id} value={f.usage || ''} onChange={e => set('usage', e.target.value)} className={cx(changed.includes('usage') && 'bg-warn-tint')} />}</Field></div>
         <Field label="Revisions">{id => <Select id={id} value={f.rev} onChange={e => set('rev', e.target.value)}>{['1 included', '2 included', '3 included'].map(r => <option key={r}>{r}</option>)}</Select>}</Field>
+        <div className="sm:col-span-2 pt-2"><Label>Dates and payment structure</Label></div>
+        <Field label="First draft date">{id => <Input id={id} type="date" value={f.firstDraftDate} onChange={e => set('firstDraftDate', e.target.value)} className={cx(changed.includes('firstDraftDate') && 'bg-warn-tint')} />}</Field>
+        <Field label="Final delivery date" error={dateErr}>{id => <Input id={id} type="date" value={f.finalDeliveryDate} aria-invalid={!!dateErr} onChange={e => set('finalDeliveryDate', e.target.value)} className={cx(changed.includes('finalDeliveryDate') && 'bg-warn-tint')} />}</Field>
+        <Field label="Payment structure">{id => <Select id={id} value={f.paymentStructure} onChange={e => set('paymentStructure', e.target.value as PaymentStructure | '')} className={cx(changed.includes('paymentStructure') && 'bg-warn-tint')}><option value="">Not set</option>{STRUCTURES.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}</Select>}</Field>
+        {f.paymentStructure === 'advance_balance' && <Field label="Advance (%)" hint="The share paid up front, 1 to 99." error={pctErr}>{id => <Input id={id} inputMode="numeric" value={f.advancePercent} aria-invalid={!!pctErr} onChange={e => set('advancePercent', e.target.value.replace(/\D/g, ''))} className={cx(changed.includes('advancePercent') && 'bg-warn-tint')} />}</Field>}
         <div className="sm:col-span-2"><Field label="Notes for the brand (optional)">{id => <Textarea id={id} rows={3} value={f.notes} onChange={e => set('notes', e.target.value)} />}</Field></div>
       </Card>
 
       <div className="sticky bottom-20 lg:bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/95 backdrop-blur px-4 py-3 shadow-[var(--shadow-pop)]">
-        <span className={cx('text-[13px] font-semibold', missing.length ? 'text-warn' : 'text-brand-ink')}>{missing.length ? `Add ${missing.join(', ')} to send.` : versionMode ? `${changed.length} term${changed.length === 1 ? '' : 's'} changed.` : 'Ready to send.'}</span>
+        <span role={formErr ? 'alert' : undefined} className={cx('text-[13px] font-semibold', formErr ? 'text-danger' : missing.length ? 'text-warn' : 'text-brand-ink')}>{formErr ? formErr : missing.length ? `Add ${missing.join(', ')} to send.` : versionMode ? `${changed.length} term${changed.length === 1 ? '' : 's'} changed.` : 'Ready to send.'}</span>
         <div className="flex gap-2">
           {!versionMode && <Button onClick={saveDraft}>Save draft</Button>}
           <Button variant="primary" onClick={trySend}>{versionMode ? `Send version ${v}` : 'Review and send'}</Button>
@@ -119,7 +174,7 @@ export default function EditDeal() {
             ? `Hi ${firstName(f.contact)}, I've updated the terms for ${f.del} (version ${v}): ${inr(f.n)}, payment ${f.trigger}${f.due ? ' · ' + f.due : ''}, usage: ${f.usage}.\nPlease confirm the new version. Thanks, ${firstName(a.creator.name)}`
             : `Hi ${firstName(f.contact)}, I've updated the terms for ${f.del} (version ${v}): ${location.origin}/d/${sending}\nPlease confirm the new version. Thanks, ${firstName(a.creator.name)}`}
           note={isRemote ? 'Brand links arrive in the next update. Share the terms yourself; sending locks this version.' : undefined}
-          onSent={async c => { try { await api.deals.sendNewVersion(existing.id, f, c, sending); toast(`Version ${v} sent.`); nav(`/app/deals/${existing.id}`); } catch (e) { toast((e as Error).message); } }} />
+          onSent={async c => { try { await api.deals.sendNewVersion(existing.id, editsOf(f, init), c, sending); toast(`Version ${v} sent.`); nav(`/app/deals/${existing.id}`); } catch (e) { setSending(null); fail(e); } }} />
       )}
     </div>
   );
